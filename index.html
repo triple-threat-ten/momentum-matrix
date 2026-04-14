@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23E6EBF5'/%3E%3Ctext x='16' y='23' font-size='18' font-weight='800' font-family='system-ui,-apple-system,sans-serif' text-anchor='middle' letter-spacing='-1'%3E%3Ctspan fill='%231A1D2B'%3EM%3C/tspan%3E%3Ctspan fill='%236366F1'%3EM%3C/tspan%3E%3C/text%3E%3C/svg%3E">
+<title>Momentum Matrix</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="header-inner">
+    <div>
+      <span class="logo-mark">v25.1</span>
+      <h1>Momentum<span>Matrix</span></h1>
+      <p class="tagline">// capture · triage · act</p>
+    </div>
+    <div class="header-actions">
+      <!-- Search -->
+      <button class="btn-search" id="btnSearch" title="Search tasks (/)">
+        <span>🔍</span>
+      </button>
+
+      <!-- Export -->
+      <button class="btn-hdr-action" id="btnExport"
+              title="Download all tasks as a .json backup file">↓ export</button>
+
+      <!-- Import (hidden file input + visible label) -->
+      <label class="btn-hdr-action" id="btnImport"
+             title="Restore tasks from a previously exported .json file">
+        ↑ import
+        <input type="file" accept=".json" id="importInput" style="display:none">
+      </label>
+
+      <!-- Reset -->
+      <button class="btn-hdr-action btn-hdr-reset" id="btnReset"
+              title="Clear all saved data and reset board">↺ reset</button>
+
+      <!-- Manage tasks — opens board panel -->
+      <button class="btn-board" id="btnBoard" title="Manage tasks (N)">
+        <div class="btn-board-icon">
+          <span></span><span></span><span></span>
+        </div>
+        Manage tasks
+        <span class="btn-board-count" id="boardCount">0</span>
+      </button>
+    </div>
+    </div><!-- /header-inner -->
+  </header>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       ACT — single-page landing, no scroll
+  ══════════════════════════════════════════════════════════════ -->
+  <div class="act-page" id="actPage">
+
+    <div class="act-page-inner">
+      <div class="section-label">// act</div>
+
+      <!-- HALO PANEL -->
+      <div class="halo-panel" id="haloPanel">
+
+        <!-- Streak — reserved height always (visibility:hidden when inactive) -->
+        <div class="halo-streak" id="haloStreak">
+          <div class="halo-streak-dot" id="haloStreakDot"></div>
+          <div class="halo-streak-text" id="haloStreakText"></div>
+        </div>
+
+        <!-- Active session card — replaces halo block + peek when timer running -->
+        <div class="halo-session-card" id="haloSessionCard" style="display:none">
+          <div class="hsc-header">
+            <div class="hsc-eyebrow">Block in progress</div>
+            <div class="hsc-task" id="hscTask"></div>
+          </div>
+          <div class="hsc-countdown-wrap">
+            <div class="hsc-countdown" id="hmtCountdown">25:00</div>
+          </div>
+          <div class="hsc-footer">
+            <button class="hsc-btn-open" id="hmtOpen">Open task</button>
+            <button class="hsc-btn-pause" id="hscBtnPause" title="Pause">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor">
+                <rect x="1" y="1" width="3.5" height="10" rx="1"/>
+                <rect x="7.5" y="1" width="3.5" height="10" rx="1"/>
+              </svg>
+            </button>
+            <button class="hsc-btn-stop" id="hmtStop">Stop</button>
+          </div>
+        </div>
+
+        <!-- Deep halo card block -->
+        <div class="halo-block" id="haloBlock">
+          <div class="halo-view" id="haloViewDeep">
+            <div id="haloCard"></div>
+          </div>
+          <!-- Inline duration picker — replaces card content on "Start session" -->
+          <div class="halo-view halo-view-hidden" id="haloViewPicker">
+            <div class="halo-picker">
+              <div class="halo-picker-task" id="haloPickerTask"></div>
+              <div class="halo-picker-label">How long is this block?</div>
+              <div class="halo-picker-durations">
+                <button class="halo-picker-dur" data-action="halo-pick-dur" data-mins="15">15 min</button>
+                <button class="halo-picker-dur" data-action="halo-pick-dur" data-mins="25">25 min</button>
+                <button class="halo-picker-dur" data-action="halo-pick-dur" data-mins="50">50 min</button>
+              </div>
+              <button class="halo-picker-cancel" data-action="halo-pick-cancel">cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Peek drawer: Flow tasks, always below the halo block -->
+        <div class="peek-trigger" id="peekTrigger">
+          <span class="peek-trigger-text" id="peekTriggerText">3 Flow tasks ready</span>
+          <span class="peek-count" id="peekCount">+3</span>
+          <svg class="peek-chevron" id="peekChevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="peek-drawer" id="peekDrawer">
+          <div class="peek-drawer-inner" id="peekDrawerInner"></div>
+        </div>
+
+      </div><!-- /halo-panel -->
+    </div>
+
+  </div><!-- /act-page -->
+
+  <!-- ══════════════════════════════════════════════════════════════
+       BOARD PANEL — right-side slide-in
+  ══════════════════════════════════════════════════════════════ -->
+  <div class="board-panel" id="boardPanel">
+
+    <div class="board-panel-hdr">
+      <div class="board-panel-hdr-top">
+        <div>
+          <div class="board-panel-title">Your tasks</div>
+          <div class="board-panel-sub" id="boardPanelSub">—</div>
+        </div>
+        <button class="board-panel-close" id="btnBoardClose">×</button>
+      </div>
+      <!-- Health badges row -->
+      <div class="board-panel-badges" id="boardPanelBadges">
+        <span class="bz-fire-badge hidden bz-badge-clickable" id="bzFireBadge"></span>
+        <span class="bz-activation-badge hidden bz-badge-clickable" id="bzActivationBadge"></span>
+        <button class="btn-drift-box hidden" id="btnDriftBox" title="Tasks whose urgency rating may need reassessing">⏱ <span id="driftBoxCount">0</span> drifting</button>
+      </div>
+      <!-- Capture bar -->
+      <div class="quick-capture-wrap" id="captureWrap">
+        <span class="quick-capture-icon">⚡</span>
+        <input class="quick-capture-input" id="quickInput" type="text"
+          placeholder="New task… (N to focus)"
+          autocomplete="off" spellcheck="false" />
+        <div class="quick-capture-hints">
+          <div class="qch-idle">
+            <kbd class="qch-key">N</kbd>
+            <span class="qch-lbl">to focus</span>
+          </div>
+          <div class="qch-active">
+            <kbd class="qch-key">↵</kbd><span class="qch-lbl">inbox</span>
+            <div class="qch-divider"></div>
+            <kbd class="qch-key">⇧↵</kbd><span class="qch-lbl">score now</span>
+            <div class="qch-divider"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Inbox strip -->
+      <div class="inbox-strip hidden" id="inboxStrip">
+        <div class="inbox-strip-top">
+          <button class="btn-triage" id="btnTriage">
+            ↓ Triage <span class="inbox-count" id="inboxCount">0</span>
+          </button>
+          <span class="inbox-label">// inbox</span>
+        </div>
+        <div class="inbox-cards-scroll" id="inboxCards"></div>
+      </div>
+    </div>
+
+    <!-- Board columns -->
+    <div class="board-panel-body">
+      <div id="moodView">
+        <div class="mv-board">
+          <!-- Flow list -->
+          <div class="mv-col mv-flow" id="mvColFlow">
+            <div class="mv-col-accent"></div>
+            <div class="mv-col-head">
+              <div class="col-head-meta">
+                <span class="col-head-emoji-flow">⚡</span>
+                <span class="mv-col-title">Flow</span>
+              </div>
+              <div class="mv-col-meta">
+                <span class="mv-col-count" id="mvFlowCount"></span>
+                <span class="mv-done-badge" id="mvFlowDone"></span>
+              </div>
+            </div>
+            <div class="mv-col-sub">Any window · clear path, no setup needed</div>
+            <div id="mvFlowConfirm"></div>
+            <div class="mv-flow-list" id="mvFlowList"></div>
+          </div>
+
+          <!-- Deep treemap -->
+          <div class="mv-col mv-deep" id="mvColDeep">
+            <div class="mv-col-accent"></div>
+            <div class="mv-col-head">
+              <div class="col-head-meta">
+                <span class="col-head-emoji-deep">🎯</span>
+                <span class="mv-col-title">Deep</span>
+              </div>
+              <div class="mv-col-meta">
+                <span class="mv-col-count" id="mvDeepCount"></span>
+                <span class="mv-done-badge" id="mvDeepDone"></span>
+              </div>
+            </div>
+            <div class="mv-col-sub">Protected time · hard to start, high stakes</div>
+            <div id="mvDeepConfirm"></div>
+            <div class="mv-treemap" id="mvDeepTreemap"></div>
+          </div>
+        </div>
+
+        <!-- Drift footer strip -->
+        <div class="mv-drift-wrap" id="mvDriftWrap">
+          <div class="mv-drift-footer" id="mvDriftBar">
+            <span class="mv-drift-label">
+              <span class="col-head-emoji-drift">🌫️</span>
+              Drift
+            </span>
+            <div class="mv-drift-right">
+              <span class="mv-done-badge" id="mvDriftDone" onclick="event.stopPropagation();openDoneModal('drift')" style="display:none"></span>
+              <span class="mv-parked-badge hidden" id="mvParkedBadge" onclick="event.stopPropagation();openParkedReview()">↻ <span id="mvParkedStaleCount">0</span> stale</span>
+              <span class="mv-drift-count" id="mvDriftCount"></span>
+              <button class="mv-drift-show" id="btnDriftShow" onclick="toggleDriftDrawer()">↑ show</button>
+            </div>
+          </div>
+        </div>
+      </div><!-- /moodView -->
+
+      <!-- Drift slide-up drawer — direct child of panel body so it overlays correctly -->
+      <div class="mv-drift-drawer" id="mvDriftDrawer">
+        <div class="mv-drift-drawer-hdr">
+          <span class="mv-drift-drawer-title">
+            <span>🌫️</span> Drift — parked tasks
+          </span>
+          <button class="mv-drift-drawer-close" onclick="closeDriftDrawer()">×</button>
+        </div>
+        <div id="mvDriftConfirm"></div>
+        <div class="mv-drift-inner" id="mvDriftInner"></div>
+      </div>
+    </div>
+
+  </div><!-- /board-panel -->
+
+
+
+
+  <!-- DRIFT BOX MODAL -->
+  <!-- Confirm modal (replaces native confirm() dialogs) -->
+  <div class="confirm-overlay hidden" id="confirmOverlay">
+    <div class="confirm-modal" id="confirmModal">
+      <div class="confirm-message" id="confirmMessage"></div>
+      <div class="confirm-actions">
+        <button class="confirm-btn confirm-btn-cancel" id="confirmCancel">Cancel</button>
+        <button class="confirm-btn confirm-btn-ok" id="confirmOk">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="drift-box-overlay hidden" id="driftBoxOverlay">
+    <div class="drift-box-modal" id="driftBoxModal">
+      <div class="drift-box-header">
+        <div>
+          <div class="drift-box-label">// urgency review</div>
+          <div class="drift-box-title">Tasks that may be mis-rated</div>
+        </div>
+        <button class="drift-box-close" id="btnDriftBoxClose">×</button>
+      </div>
+      <div class="drift-box-sub">These tasks have sat longer than their urgency implies. Is the rating still accurate?</div>
+      <div class="drift-box-list" id="driftBoxList"></div>
+      <div class="drift-box-empty hidden" id="driftBoxEmpty">
+        <span>No urgency drift detected — ratings look accurate.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- FIRE MODAL -->
+  <div class="fire-overlay hidden" id="fireOverlay">
+    <div class="fire-modal" id="fireModal">
+      <div class="fire-modal-header">
+        <div>
+          <div class="fire-modal-label">// fire tasks</div>
+          <div class="fire-modal-title">Needs your attention now</div>
+        </div>
+        <button class="fire-modal-close" id="btnFireClose">×</button>
+      </div>
+      <div class="fire-modal-sub">These tasks score above 78 — high importance, high urgency. Each one is actively competing for your focus. Decide: block time, start now, or reassess if circumstances changed.</div>
+      <div class="fire-modal-list" id="fireModalList"></div>
+      <div class="fire-modal-empty hidden" id="fireModalEmpty">
+        <span>No Fire tasks right now — board is calm.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- STUCK MODAL -->
+  <div class="stuck-overlay hidden" id="stuckOverlay">
+    <div class="stuck-modal" id="stuckModal">
+      <div class="stuck-modal-header">
+        <div>
+          <div class="stuck-modal-label">// activation block</div>
+          <div class="stuck-modal-title">Hard to start, never started</div>
+        </div>
+        <button class="stuck-modal-close" id="btnStuckClose">×</button>
+      </div>
+      <div class="stuck-modal-sub">These tasks have been in Deep for 7+ days without a single brick. High activation cost — the first action is the hardest. Drop one brick now, block time this week, or move them if they no longer belong in Deep.</div>
+      <div class="stuck-modal-list" id="stuckModalList"></div>
+      <div class="stuck-modal-empty hidden" id="stuckModalEmpty">
+        <span>No stuck tasks — everything in Deep has been touched recently.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PARKED REVIEW MODAL -->
+  <div class="parked-overlay hidden" id="parkedOverlay">
+    <div class="parked-modal" id="parkedModal">
+      <div class="parked-header">
+        <div>
+          <div class="parked-label">// parked review</div>
+          <div class="parked-title">Tasks parked 30+ days</div>
+        </div>
+        <button class="parked-close" id="btnParkedClose">×</button>
+      </div>
+      <div class="parked-sub">Still relevant? Reassess or remove.</div>
+      <div class="parked-list" id="parkedList"></div>
+      <div class="parked-empty hidden" id="parkedEmpty">
+        <span>Nothing parked for 30+ days — Drift column looks fresh.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- FULL SCORE MODAL — opened via ⇧↵ from capture bar -->
+  <div class="add-overlay hidden" id="addOverlay">
+    <div class="add-modal" id="addModal">
+
+      <div class="add-modal-header">
+        <span class="add-modal-label">// score this task</span>
+        <button class="add-modal-close" id="btnAddClose">×</button>
+      </div>
+
+      <!-- SCORE ORB -->
+      <div class="score-orb-wrap">
+        <svg class="score-orb-svg" id="scoreOrbSvg" width="110" height="110" viewBox="0 0 120 120">
+          <circle class="score-orb-bg"    cx="60" cy="60" r="48"/>
+          <circle class="score-orb-ring"  id="scoreOrbRing" cx="60" cy="60" r="44"
+            stroke-dasharray="276.5" stroke-dashoffset="276.5" stroke="var(--accent)"/>
+          <circle class="score-orb-circle" id="scoreOrbCircle" cx="60" cy="60" r="6"
+            fill="var(--accent)" opacity="0.18"/>
+          <text class="score-orb-number"  id="scoreOrbNum" x="60" y="60"
+            font-size="28" fill="var(--text)">—</text>
+        </svg>
+        <div class="score-orb-tier"  id="scoreOrbTier">—</div>
+        <div class="score-orb-nudge" id="scoreOrbNudge"></div>
+      </div>
+
+      <input class="task-input" id="taskInput" type="text" placeholder="Task name…" autocomplete="off" />
+      <textarea class="panel-note mb-modal-field" id="addNote" rows="1"
+        placeholder="Add a note…"
+        spellcheck="false"
+        oninput="autoResizeNote(this)"></textarea>
+
+      <!-- AGENCY SELECTOR -->
+      <div class="agency-row">
+        <span class="agency-lbl">Who acts?</span>
+        <button class="agency-btn active" data-agency="solo"    data-ctx="add">🙋 Mine</button>
+        <button class="agency-btn"        data-agency="shared"  data-ctx="add">🤝 Shared</button>
+        <button class="agency-btn"        data-agency="waiting" data-ctx="add">⏸ Waiting</button>
+      </div>
+      <div class="context-row" id="addContextRow">
+        <input class="context-input" id="addContextInput" type="text"
+          placeholder="Who's involved / what are you waiting for?" maxlength="120" />
+      </div>
+
+      <!-- SLIDERS -->
+      <div class="csliders">
+        <div class="cslider-row">
+          <div class="cslider-head">
+            <span class="cslider-name axis-imp">Importance</span>
+            <span class="cslider-word axis-imp" id="impWord">Useful</span>
+          </div>
+          <input type="range" id="impRange" min="1" max="4" step="1" value="2" oninput="setImportance(+this.value)"/>
+          <div class="cslider-ticks">
+            <span class="cslider-tick" data-dim="imp" data-val="1">Trivial</span>
+            <span class="cslider-tick" data-dim="imp" data-val="2">Useful</span>
+            <span class="cslider-tick" data-dim="imp" data-val="3">Important</span>
+            <span class="cslider-tick" data-dim="imp" data-val="4">Critical</span>
+          </div>
+        </div>
+        <div class="cslider-row">
+          <div class="cslider-head">
+            <span class="cslider-name axis-urg">Urgency</span>
+            <span class="cslider-word axis-urg" id="urgWord">Later</span>
+          </div>
+          <input type="range" id="urgRange" min="1" max="4" step="1" value="2" oninput="setUrgency(+this.value)"/>
+          <div class="cslider-ticks">
+            <span class="cslider-tick" data-dim="urg" data-val="1">Someday</span>
+            <span class="cslider-tick" data-dim="urg" data-val="2">Later</span>
+            <span class="cslider-tick" data-dim="urg" data-val="3">Soon</span>
+            <span class="cslider-tick" data-dim="urg" data-val="4">Now</span>
+          </div>
+        </div>
+        <div class="cslider-row">
+          <div class="cslider-head">
+            <span class="cslider-name axis-sim">Simplicity</span>
+            <span class="cslider-word axis-sim" id="simWord">Manageable</span>
+          </div>
+          <input type="range" id="simRange" min="1" max="4" step="1" value="3" oninput="setSimplicity(+this.value)"/>
+          <div class="cslider-ticks">
+            <span class="cslider-tick" data-dim="sim" data-val="1">Heavy</span>
+            <span class="cslider-tick" data-dim="sim" data-val="2">Tricky</span>
+            <span class="cslider-tick" data-dim="sim" data-val="3">Manageable</span>
+            <span class="cslider-tick" data-dim="sim" data-val="4">Effortless</span>
+          </div>
+        </div>
+      </div>
+
+      <button class="add-btn" id="btnAddTask">Add to Matrix</button>
+    </div>
+  </div>
+
+<!-- SEARCH OVERLAY -->
+<div class="search-overlay" id="searchOverlay">
+  <div class="search-box" id="searchBox">
+    <div class="search-input-wrap">
+      <span class="search-icon">🔍</span>
+      <input class="search-input" id="searchInput" type="text"
+             placeholder="Search tasks…"
+             oninput="renderSearch()"
+             onkeydown="searchKeydown(event)"/>
+      <span class="search-shortcut">Esc to close</span>
+    </div>
+    <div class="search-results" id="searchResults">
+      <div class="search-empty">Type to search your tasks</div>
+    </div>
+    <div class="search-footer">
+      <span><span class="sf-key">↑↓</span> navigate</span>
+      <span><span class="sf-key">↵</span> open task</span>
+      <span><span class="sf-key">Esc</span> close</span>
+    </div>
+  </div>
+</div>
+
+<!-- TRIAGE MODAL -->
+<div class="triage-overlay hidden" id="triageOverlay">
+  <div class="triage-modal">
+    <button class="triage-close" id="btnTriageClose">×</button>
+    <div class="triage-header">
+      <span class="triage-section-lbl">// triage</span>
+      <span class="triage-progress" id="triageProgress"></span>
+    </div>
+
+    <!-- Triage orb -->
+    <div class="score-orb-wrap mb-score-orb">
+      <svg class="score-orb-svg" width="96" height="96" viewBox="0 0 120 120">
+        <circle class="score-orb-bg"     cx="60" cy="60" r="48"/>
+        <circle class="score-orb-ring"   id="tOrbRing" cx="60" cy="60" r="44"
+          stroke-dasharray="276.5" stroke-dashoffset="276.5" stroke="#787888"/>
+        <circle class="score-orb-circle" id="tOrbCircle" cx="60" cy="60" r="6"
+          fill="#787888" opacity="0.18"/>
+        <text   class="score-orb-number" id="tOrbNum" x="60" y="60"
+          font-size="26" fill="#8B90A0">—</text>
+      </svg>
+      <div class="score-orb-tier"  id="tOrbTier">—</div>
+    </div>
+
+    <textarea class="triage-task-input" id="triageTaskName" rows="1"
+      spellcheck="false" autocomplete="off"
+      oninput="autoResizeTriageName(this)"
+      placeholder="Task name…"></textarea>
+    <div class="triage-age" id="triageTaskAge"></div>
+    <textarea class="panel-note mb-modal-field-lg" id="triageNote" rows="1"
+      placeholder="Add a note…"
+      spellcheck="false"
+      oninput="autoResizeNote(this)"></textarea>
+
+    <!-- Agency for triage -->
+    <div class="agency-row mb-agency-row">
+      <span class="agency-lbl">Who acts?</span>
+      <button class="agency-btn active" data-agency="solo"    data-ctx="triage">🙋 Mine</button>
+      <button class="agency-btn"        data-agency="shared"  data-ctx="triage">🤝 Shared</button>
+      <button class="agency-btn"        data-agency="waiting" data-ctx="triage">⏸ Waiting</button>
+    </div>
+    <div class="context-row" id="triageContextRow">
+      <input class="context-input" id="triageContextInput" type="text"
+        placeholder="Who's involved / what are you waiting for?" maxlength="120"/>
+    </div>
+
+    <!-- Sliders -->
+    <div class="csliders">
+      <div class="cslider-row">
+        <div class="cslider-head">
+          <span class="cslider-name axis-imp">Importance</span>
+          <span class="cslider-word axis-imp" id="tImpWord">Useful</span>
+        </div>
+        <input type="range" id="tImp" min="1" max="4" step="1" value="2" oninput="triagePreview()"/>
+        <div class="cslider-ticks">
+          <span class="cslider-tick" data-dim="timp" data-val="1">Trivial</span>
+          <span class="cslider-tick" data-dim="timp" data-val="2">Useful</span>
+          <span class="cslider-tick" data-dim="timp" data-val="3">Important</span>
+          <span class="cslider-tick" data-dim="timp" data-val="4">Critical</span>
+        </div>
+      </div>
+      <div class="cslider-row">
+        <div class="cslider-head">
+          <span class="cslider-name axis-urg">Urgency</span>
+          <span class="cslider-word axis-urg" id="tUrgWord">Later</span>
+        </div>
+        <input type="range" id="tUrg" min="1" max="4" step="1" value="2" oninput="triagePreview()"/>
+        <div class="cslider-ticks">
+          <span class="cslider-tick" data-dim="turg" data-val="1">Someday</span>
+          <span class="cslider-tick" data-dim="turg" data-val="2">Later</span>
+          <span class="cslider-tick" data-dim="turg" data-val="3">Soon</span>
+          <span class="cslider-tick" data-dim="turg" data-val="4">Now</span>
+        </div>
+      </div>
+      <div class="cslider-row">
+        <div class="cslider-head">
+          <span class="cslider-name axis-sim">Simplicity</span>
+          <span class="cslider-word axis-sim" id="tSimWord">Manageable</span>
+        </div>
+        <input type="range" id="tSim" min="1" max="4" step="1" value="3" oninput="triagePreview()"/>
+        <div class="cslider-ticks">
+          <span class="cslider-tick" data-dim="tsim" data-val="1">Heavy</span>
+          <span class="cslider-tick" data-dim="tsim" data-val="2">Tricky</span>
+          <span class="cslider-tick" data-dim="tsim" data-val="3">Manageable</span>
+          <span class="cslider-tick" data-dim="tsim" data-val="4">Effortless</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="triage-actions">
+      <button class="btn-tri-send" id="btnTriSend">→ Send to Matrix</button>
+      <button class="btn-tri-skip" id="btnTriSkip">Skip</button>
+      <button class="btn-tri-del"  id="btnTriDel">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- DONE SUMMARY MODAL -->
+<div class="done-modal-overlay hidden" id="doneModalOverlay">
+  <div class="done-modal" id="doneModal">
+    <button class="done-modal-close" id="btnDoneClose">×</button>
+    <div class="done-modal-hero">
+      <span class="done-modal-emoji" id="doneEmoji"></span>
+      <div class="done-modal-congrats" id="doneCongrats"></div>
+      <div class="done-modal-sub" id="doneSub"></div>
+    </div>
+    <div class="done-modal-divider"></div>
+    <div class="done-modal-section-label">// completed tasks</div>
+    <div id="doneTaskList"></div>
+    <div class="done-modal-reopen-hint" style="display:none"></div>
+  </div>
+</div>
+
+<!-- TROPHY PANEL (individual done task) -->
+<div class="trophy-overlay hidden" id="trophyOverlay">
+  <div class="trophy-panel" id="trophyPanel">
+    <button class="trophy-close" id="btnTrophyClose">×</button>
+    <div class="trophy-hero">
+      <span class="trophy-emoji" id="trEmoji"></span>
+      <div class="trophy-heading" id="trHeading"></div>
+      <div class="trophy-task"   id="trTask"></div>
+      <div class="trophy-sub"   id="trSub"></div>
+    </div>
+    <div class="trophy-body">
+      <div class="trophy-kpis" id="trKpis"></div>
+      <div class="trophy-section">// momentum timeline</div>
+      <div class="timeline-outer" id="trTimeline"></div>
+      <div class="trophy-section">// bricks laid</div>
+      <div class="trophy-bricks" id="trBricks"></div>
+      <button class="btn-trophy-reopen" id="btnTrophyReopen">↩ Reopen this task</button>
+    </div>
+  </div>
+</div>
+
+<!-- DETAIL PANEL -->
+<div class="overlay hidden" id="overlay">
+  <div class="panel" id="panel">
+
+    <div class="panel-static">
+      <button class="panel-close" id="btnPanelClose" style="display:none">×</button>
+
+      <!-- Panel menu — chevron reveals close / done / delete -->
+      <div class="panel-menu-wrap" id="panelMenuWrap">
+        <button class="panel-menu-btn" id="btnPanelMenu" title="More options">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+        <div class="panel-menu-dropdown hidden" id="panelMenuDropdown">
+          <button class="panel-menu-item" id="pmClose">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Close
+          </button>
+          <button class="panel-menu-item panel-menu-item--done" id="pmDone">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Mark done
+          </button>
+          <div class="panel-menu-divider"></div>
+          <button class="panel-menu-item panel-menu-item--delete" id="pmDelete">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+            Delete task
+          </button>
+        </div>
+      </div>
+
+      <div class="panel-header">
+        <div class="panel-orb-col">
+          <svg class="panel-orb-svg" width="110" height="110" viewBox="0 0 120 120">
+            <circle class="score-orb-bg"     cx="60" cy="60" r="48"/>
+            <circle class="score-orb-ring"   id="pOrbRing" cx="60" cy="60" r="44"
+              stroke-dasharray="276.5" stroke-dashoffset="276.5" stroke="#787888"/>
+            <circle class="score-orb-circle" id="pOrbCircle" cx="60" cy="60" r="6"
+              fill="#787888" opacity="0.18"/>
+            <text   class="score-orb-number" id="pOrbNum" x="60" y="60"
+              font-size="26" fill="#8B90A0">—</text>
+          </svg>
+        </div>
+        <div class="panel-info-col">
+          <div class="panel-tier" id="pTier"></div>
+          <textarea class="panel-name-input" id="pNameInput" rows="1"
+            spellcheck="false" autocomplete="off"
+            oninput="autoResizeName(this)"
+            onblur="commitNameEdit()"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.blur();}"></textarea>
+          <div class="panel-nudge" id="pNudge"></div>
+          <textarea class="panel-note" id="pNote" rows="1"
+            placeholder="Add a note…"
+            spellcheck="false"
+            oninput="autoResizeNote(this)"
+            onblur="commitNoteEdit()"></textarea>
+        </div>
+      </div>
+
+      <div class="panel-drift-prompt" id="panelDriftPrompt">
+        <div class="drift-prompt-text" id="panelDriftText"></div>
+        <div class="drift-prompt-actions">
+          <button class="btn-drift-keep"     id="btnDriftKeep">Still accurate</button>
+          <button class="btn-drift-reassess" id="btnDriftAction">Reassess ↓</button>
+        </div>
+      </div>
+
+      <div class="panel-ctx-bar" id="panelCtxBar">
+        <button class="panel-ctx-cell" id="pCtxScore"    onclick="openPanelTab('score')"    aria-pressed="false">
+          <span class="panel-ctx-val" id="pCtxScoreVal">—</span>
+          <span class="panel-ctx-name">Score</span>
+        </button>
+        <button class="panel-ctx-cell" id="pCtxProgress" onclick="openPanelTab('progress')" aria-pressed="false">
+          <span class="panel-ctx-val" id="pCtxProgressVal">0</span>
+          <span class="panel-ctx-name">Bricks</span>
+        </button>
+        <button class="panel-ctx-cell" id="pCtxLinks"    onclick="openPanelTab('links')"    aria-pressed="false">
+          <span class="panel-ctx-val" id="pCtxLinksVal">0</span>
+          <span class="panel-ctx-name">Links</span>
+        </button>
+        <button class="panel-ctx-cell" id="pCtxAgency"   onclick="openPanelTab('agency')"   aria-pressed="false">
+          <span class="panel-ctx-val" id="pCtxAgencyVal">—</span>
+          <span class="panel-ctx-name">Agency</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="panel-scroll">
+      <div class="panel-accordion-body">
+
+        <div class="panel-acc-panel hidden" id="pTabScore">
+          <div class="panel-section-label">// adjust score</div>
+          <div class="csliders">
+            <div class="cslider-row">
+              <div class="cslider-head">
+                <span class="cslider-name axis-imp">Importance</span>
+                <span class="cslider-word axis-imp" id="eImpWord"></span>
+              </div>
+              <input type="range" id="eImp" min="1" max="4" step="1" value="2" oninput="updateEditPreview()"/>
+              <div class="cslider-ticks">
+                <span class="cslider-tick" data-dim="eimp" data-val="1">Trivial</span>
+                <span class="cslider-tick" data-dim="eimp" data-val="2">Useful</span>
+                <span class="cslider-tick" data-dim="eimp" data-val="3">Important</span>
+                <span class="cslider-tick" data-dim="eimp" data-val="4">Critical</span>
+              </div>
+            </div>
+            <div class="cslider-row">
+              <div class="cslider-head">
+                <span class="cslider-name axis-urg">Urgency</span>
+                <span class="cslider-word axis-urg" id="eUrgWord"></span>
+              </div>
+              <input type="range" id="eUrg" min="1" max="4" step="1" value="2" oninput="updateEditPreview()"/>
+              <div class="cslider-ticks">
+                <span class="cslider-tick" data-dim="eurg" data-val="1">Someday</span>
+                <span class="cslider-tick" data-dim="eurg" data-val="2">Later</span>
+                <span class="cslider-tick" data-dim="eurg" data-val="3">Soon</span>
+                <span class="cslider-tick" data-dim="eurg" data-val="4">Now</span>
+              </div>
+            </div>
+            <div class="cslider-row">
+              <div class="cslider-head">
+                <span class="cslider-name axis-sim">Simplicity</span>
+                <span class="cslider-word axis-sim" id="eSimWord"></span>
+              </div>
+              <input type="range" id="eSim" min="1" max="4" step="1" value="3" oninput="updateEditPreview()"/>
+              <div class="cslider-ticks">
+                <span class="cslider-tick" data-dim="esim" data-val="1">Heavy</span>
+                <span class="cslider-tick" data-dim="esim" data-val="2">Tricky</span>
+                <span class="cslider-tick" data-dim="esim" data-val="3">Manageable</span>
+                <span class="cslider-tick" data-dim="esim" data-val="4">Effortless</span>
+              </div>
+            </div>
+          </div>
+          <div class="panel-score-bar" id="pScoreBar">
+            <div class="sb-score">
+              <span class="sb-score-lbl">current</span>
+              <span class="sb-score-num" id="pScoreFrom"></span>
+              <span class="sb-score-tier" id="pScoreFromTier"></span>
+            </div>
+            <div class="sb-mid">
+              <span class="sb-arrow">→</span>
+              <span class="psb-diff" id="pScoreDiff"></span>
+            </div>
+            <div class="sb-score">
+              <span class="sb-score-lbl">preview</span>
+              <span class="sb-score-num" id="pScoreTo"></span>
+              <span class="sb-score-tier" id="pScoreToTier"></span>
+            </div>
+            <div class="sb-apply">
+              <button class="btn-apply-score" id="btnApplyScore">Apply</button>
+            </div>
+          </div>
+          <div class="formula-hint" id="pFormulaHint"></div>
+        </div>
+
+        <div class="panel-acc-panel hidden" id="pTabProgress">
+          <div class="panel-section-label" id="pBricksLabel">// progress — drop a brick each time you touch this</div>
+          <div class="panel-avoidance-prompt" id="pAvoidancePrompt">
+            <div class="pap-text" id="pAvoidanceText"></div>
+          </div>
+          <div class="bricks-display" id="pBricks"></div>
+          <div class="brick-detail" id="pBrickDetail">
+            <div class="brick-detail-text" id="pBrickDetailText"></div>
+            <div class="brick-detail-foot">
+              <span class="brick-detail-ts" id="pBrickDetailTs"></span>
+              <button class="btn-brick-del" id="pBrickDetailDel">Remove brick</button>
+            </div>
+          </div>
+          <div id="pBrickCta"></div>
+          <div class="brick-health-hint hidden" id="pBrickHealth"></div>
+        </div>
+
+        <div class="panel-acc-panel hidden" id="pTabLinks">
+          <div class="panel-section-label">// linked tasks</div>
+          <div id="pLinkedTasks"></div>
+        </div>
+
+        <div class="panel-acc-panel hidden" id="pTabAgency">
+          <div class="panel-section-label">// who acts?</div>
+          <div class="agency-row mt-agency-edit">
+            <span class="agency-lbl">Who acts?</span>
+            <button class="agency-btn" data-agency="solo"    data-ctx="panel">🙋 Mine</button>
+            <button class="agency-btn" data-agency="shared"  data-ctx="panel">🤝 Shared</button>
+            <button class="agency-btn" data-agency="waiting" data-ctx="panel">⏸ Waiting</button>
+          </div>
+          <div class="context-row" id="panelContextRow">
+            <input class="context-input" id="panelContextInput" type="text"
+              placeholder="Who's involved / what are you waiting for?" maxlength="120"
+              onblur="commitContextEdit()"/>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <div class="panel-footer">
+
+      <!-- idle: start session + mark done -->
+      <div class="pf-state" id="pfIdle">
+        <div class="panel-actions">
+          <button class="btn-pstart" id="btnPanelStart">Start session</button>
+          <button class="btn-pdone"  id="btnPanelDone">Mark done</button>
+        </div>
+      </div>
+
+      <!-- picking: 3 durations replace the row, tap one = start -->
+      <div class="pf-state pf-state--hidden" id="pfPicking">
+        <div class="panel-actions">
+          <div class="pf-durations" id="pfPresets">
+            <button class="pf-dur" data-mins="15">15 min</button>
+            <button class="pf-dur" data-mins="25">25 min</button>
+            <button class="pf-dur" data-mins="50">50 min</button>
+          </div>
+          <button class="btn-pdone pf-dur-cancel" id="btnStartCancel">✕</button>
+        </div>
+      </div>
+
+      <!-- running: ring · countdown · pause · stop (only shown when THIS task is timed) -->
+      <div class="pf-state pf-state--hidden pf-running" id="pfRunning">
+        <div class="pf-timer-row">
+          <div class="pf-ring-wrap">
+            <svg class="pf-ring-svg" viewBox="0 0 40 40" width="40" height="40">
+              <circle cx="20" cy="20" r="16" class="pf-ring-bg"/>
+              <circle cx="20" cy="20" r="16" class="pf-ring-fg" id="pfRingFg"
+                stroke-dasharray="100.5" stroke-dashoffset="100.5"/>
+            </svg>
+          </div>
+          <div class="pf-timer-info">
+            <div class="pf-timer-countdown" id="pfCountdown">25:00</div>
+          </div>
+          <button class="pf-btn-pause" id="pfBtnPause" title="Pause">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor">
+              <rect x="1" y="1" width="3.5" height="10" rx="1"/>
+              <rect x="7.5" y="1" width="3.5" height="10" rx="1"/>
+            </svg>
+          </button>
+          <button class="pf-btn-stop" id="pfBtnStop">Stop</button>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+
+<!-- LINK SEARCH OVERLAY -->
+<div class="link-search-overlay hidden" id="linkSearchOverlay">
+  <div class="link-search-box">
+    <div class="link-search-header">
+      <span class="link-search-title">Link to a task</span>
+      <button class="link-search-close" id="btnLinkSearchClose">×</button>
+    </div>
+    <div class="link-search-input-wrap">
+      <input class="link-search-input" id="linkSearchInput" type="text" placeholder="Search tasks…" autocomplete="off"/>
+    </div>
+    <div class="link-search-results" id="linkSearchResults">
+      <div class="ls-empty">Type to search tasks to link</div>
+    </div>
+  </div>
+</div>
+
+<!-- LINK TYPE CHOOSER -->
+<div class="ltc-overlay hidden" id="linkTypeChooser">
+  <div class="ltc-modal">
+    <div class="ltc-header">
+      <span class="ltc-title">How are these related?</span>
+      <button class="ltc-close" id="btnLtcCancel">×</button>
+    </div>
+    <div class="ltc-tasks">
+      <span class="ltc-task-name" id="ltcFromName"></span>
+      <span class="ltc-arrow">↔</span>
+      <span class="ltc-task-name" id="ltcToName"></span>
+    </div>
+    <div class="ltc-options">
+      <button class="ltc-opt" id="btnLinkBefore">
+        <span class="ltc-opt-icon">→</span>
+        <span class="ltc-opt-body">
+          <span class="ltc-opt-label">Do this first, then that</span>
+          <span class="ltc-opt-sub" id="ltcSubBefore"></span>
+        </span>
+      </button>
+      <button class="ltc-opt" id="btnLinkAfter">
+        <span class="ltc-opt-icon">←</span>
+        <span class="ltc-opt-body">
+          <span class="ltc-opt-label">That one must happen first</span>
+          <span class="ltc-opt-sub" id="ltcSubAfter"></span>
+        </span>
+      </button>
+      <button class="ltc-opt ltc-opt-merge" id="btnLinkMerge">
+        <span class="ltc-opt-icon">⊕</span>
+        <span class="ltc-opt-body">
+          <span class="ltc-opt-label">These are the same task — merge</span>
+          <span class="ltc-opt-sub">One task survives; you set the final score</span>
+        </span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MERGE MODAL -->
+<div class="merge-overlay hidden" id="mergeModalOverlay">
+  <div class="merge-modal">
+    <div class="merge-header">
+      <span class="merge-label">// merge tasks</span>
+      <button class="merge-close" id="btnMergeClose">×</button>
+    </div>
+    <div class="merge-context">
+      <div class="merge-context-row">
+        <span class="merge-context-lbl">Keeping</span>
+        <span class="merge-task-name" id="mergeKeepName"></span>
+      </div>
+      <div class="merge-context-row">
+        <span class="merge-context-lbl">Absorbing</span>
+        <span class="merge-task-name muted" id="mergeAbsorbName"></span>
+      </div>
+    </div>
+    <div class="merge-field-label">Merged task name</div>
+    <input class="merge-name-input" id="mergeResultName" type="text" maxlength="120" placeholder="Task name…"/>
+    <div class="merge-field-label">Note (edit or combine)</div>
+    <textarea class="merge-note-input" id="mergeResultNote" rows="3" placeholder="Add a note…" spellcheck="false"></textarea>
+    <div class="merge-field-label">Set the score for the merged task</div>
+    <div class="merge-orb-row">
+      <div class="merge-orb-score" id="mergeOrbScore">—</div>
+      <div class="merge-orb-tier"  id="mergeOrbTier">—</div>
+    </div>
+    <div class="csliders">
+      <div class="cslider-row">
+        <div class="cslider-head">
+          <span class="cslider-name axis-imp">Importance</span>
+          <span class="cslider-word axis-imp" id="mImpWord"></span>
+        </div>
+        <input type="range" id="mImp" min="1" max="4" step="1" value="2"/>
+        <div class="cslider-ticks">
+          <span class="cslider-tick" data-dim="mimp" data-val="1">Trivial</span>
+          <span class="cslider-tick" data-dim="mimp" data-val="2">Useful</span>
+          <span class="cslider-tick" data-dim="mimp" data-val="3">Important</span>
+          <span class="cslider-tick" data-dim="mimp" data-val="4">Critical</span>
+        </div>
+      </div>
+      <div class="cslider-row">
+        <div class="cslider-head">
+          <span class="cslider-name axis-urg">Urgency</span>
+          <span class="cslider-word axis-urg" id="mUrgWord"></span>
+        </div>
+        <input type="range" id="mUrg" min="1" max="4" step="1" value="2"/>
+        <div class="cslider-ticks">
+          <span class="cslider-tick" data-dim="murg" data-val="1">Someday</span>
+          <span class="cslider-tick" data-dim="murg" data-val="2">Later</span>
+          <span class="cslider-tick" data-dim="murg" data-val="3">Soon</span>
+          <span class="cslider-tick" data-dim="murg" data-val="4">Now</span>
+        </div>
+      </div>
+      <div class="cslider-row">
+        <div class="cslider-head">
+          <span class="cslider-name axis-sim">Simplicity</span>
+          <span class="cslider-word axis-sim" id="mSimWord"></span>
+        </div>
+        <input type="range" id="mSim" min="1" max="4" step="1" value="3"/>
+        <div class="cslider-ticks">
+          <span class="cslider-tick" data-dim="msim" data-val="1">Heavy</span>
+          <span class="cslider-tick" data-dim="msim" data-val="2">Tricky</span>
+          <span class="cslider-tick" data-dim="msim" data-val="3">Manageable</span>
+          <span class="cslider-tick" data-dim="msim" data-val="4">Effortless</span>
+        </div>
+      </div>
+    </div>
+    <button class="btn-merge-confirm" id="btnMergeConfirm">Merge tasks</button>
+  </div>
+</div>
+
+<!-- Scripts load in dependency order: logic first, storage second, app last.
+     logic.js has no dependencies.
+     storage.js calls getTier() from logic.js and render()/renderInbox() from app.js.
+     app.js depends on all constants and functions from logic.js and storage.js. -->
+<!-- Timer prompt modal -->
+  <div class="timer-modal-overlay hidden" id="timerModalOverlay">
+    <div class="timer-modal" id="timerModal">
+      <div class="timer-modal-task" id="timerModalTask"></div>
+      <div class="timer-modal-title" id="timerModalTitle"></div>
+      <div class="timer-modal-sub" id="timerModalSub"></div>
+      <textarea class="timer-modal-ta" id="timerModalTa" rows="3"></textarea>
+      <div class="timer-modal-actions">
+        <button class="timer-modal-continue hidden" id="timerModalContinue">Resume block</button>
+        <button class="timer-modal-skip" id="timerModalSkip"></button>
+        <button class="timer-modal-cta"  id="timerModalCta"></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="copy.js"></script>
+<script src="logic.js"></script>
+<script src="storage.js"></script>
+<script src="app.js"></script>
+
+</div><!-- /app -->
+</body>
+</html>
