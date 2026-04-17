@@ -91,7 +91,6 @@ function importData(event) {
   reader.onload = e => {
     try {
       const payload = JSON.parse(e.target.result);
-      if (payload.version && payload.version > 1) { alert('This export was created by a newer version of Momentum Matrix. Please update the app before importing.'); return; }
       const importedTasks = Array.isArray(payload) ? payload : (payload.tasks || []);
       const importedInbox = Array.isArray(payload) ? []      : (payload.inbox  || []);
       if (!importedTasks.length && !importedInbox.length) { alert('Nothing to import — file appears empty or unrecognised.'); return; }
