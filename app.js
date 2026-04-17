@@ -5,8 +5,8 @@
 
 let tasks = [], inbox = [];
 let activeId = null, addingBrick = false;
-let pickerI = 2, pickerU = 2, pickerS = 3, addAgency = 'solo';
-let triageQueue = [], triageIdx = 0, triageAgency = 'solo';
+let panelMode = 'view'; // 'view' | 'create' | 'triage'
+let panelTriageQueue = [], panelTriageIdx = 0;
 // Halo panel state
 let haloDeepSkipped = [];        // IDs skipped in deep mode
 let haloDeepCurrent = null;      // current deep task shown
@@ -30,7 +30,6 @@ let searchActive = false, searchSelectedIdx = -1, searchResults = [];
 
 const MV_ZONE_MAP  = { mvColFlow:'flow', mvColDeep:'deep' };
 const SLIDERS_EDIT = { impId:'eImp', urgId:'eUrg', simId:'eSim', impWord:'eImpWord', urgWord:'eUrgWord', simWord:'eSimWord', impDim:'eimp', urgDim:'eurg', simDim:'esim' };
-const SLIDERS_TRG  = { impId:'tImp', urgId:'tUrg', simId:'tSim', impWord:'tImpWord', urgWord:'tUrgWord', simWord:'tSimWord', impDim:'timp', urgDim:'turg', simDim:'tsim' };
 
 // Score orb rendering geometry
 const ORB_RING_R = 44;
@@ -132,7 +131,6 @@ function renderOrb(ids, sc, tierKey) {
 
 function updateOrb(sc, k)       { renderOrb({ circle:'scoreOrbCircle', ring:'scoreOrbRing', num:'scoreOrbNum' }, sc, k); }
 function updatePanelOrb(sc, k)  { renderOrb({ circle:'pOrbCircle',     ring:'pOrbRing',     num:'pOrbNum'     }, sc, k); }
-function updateTriageOrb(sc, k) { renderOrb({ circle:'tOrbCircle',     ring:'tOrbRing',     num:'tOrbNum'     }, sc, k); }
 
 // ─── SLIDERS ─────────────────────────────────────────────────────────────────
 
@@ -170,9 +168,8 @@ function applyAgencyUI(selector, rowId, inputId, agency) {
   if (agency !== 'solo') setTimeout(() => g(inputId).focus(), 50);
 }
 
-function setAgency(a)       { addAgency     = a; applyAgencyUI('#addModal .agency-btn',    'addContextRow',    'addContextInput',    a); }
-function setTriageAgency(a) { triageAgency  = a; applyAgencyUI('.triage-modal .agency-btn','triageContextRow', 'triageContextInput', a); }
-function setPanelAgency(a)  {
+function setPanelAgency(a) {
+  if (panelMode === 'create' || panelMode === 'triage') return;
   const t = byId(activeId); if (!t) return;
   commitTask(() => { t.agency = a; });
   applyAgencyUI('.panel .agency-btn','panelContextRow','panelContextInput', a);
@@ -184,62 +181,123 @@ function setPanelAgency(a)  {
 
 function autoResize(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
 
-// ─── ADD MODAL ───────────────────────────────────────────────────────────────
+// ─── CREATE / TRIAGE VIA PANEL ───────────────────────────────────────────────
 
-function openScoreModal(name) {
-  g('taskInput').value = name || ''; pickerI = 2; pickerU = 2; pickerS = 3;
-  addAgency = 'solo'; setAgency('solo');
-  setImportance(2); setUrgency(2); setSimplicity(3);
-  openModal('addOverlay');
-  setTimeout(() => { const inp = g('taskInput'); inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }, 60);
+function _panelCreateDefaults() {
+  const sc = calcScore(2, 2, 3), tier = getTier(sc);
+  updatePanelOrb(sc, tier.key);
+  g('pTier').textContent = tierUI(tier.key).label; g('pTier').style.color = tierUI(tier.key).color;
+  g('pNudge').textContent = tierUI(tier.key).nudge;
+  g('eImp').value = 2; g('eUrg').value = 2; g('eSim').value = 3;
+  g('eImpWord').textContent = IMP_WORDS[2]; g('eUrgWord').textContent = URG_WORDS[2]; g('eSimWord').textContent = SIM_WORDS[3];
+  paintTrack('eImp', 2, 'var(--fire)'); paintTrack('eUrg', 2, 'var(--activate)'); paintTrack('eSim', 3, 'var(--latent)');
+  highlightTicks('eimp', 2, 'var(--fire)'); highlightTicks('eurg', 2, 'var(--activate)'); highlightTicks('esim', 3, 'var(--latent)');
+  g('pScoreBar').classList.remove('visible');
+  g('pFormulaHint').classList.remove('visible');
+  applyAgencyUI('.panel .agency-btn', 'panelContextRow', 'panelContextInput', 'solo');
+  g('panelContextInput').value = '';
+  g('panelDriftPrompt').className = 'panel-drift-prompt';
+  g('pCtxProgress').classList.add('hidden');
+  g('pCtxLinks').classList.add('hidden');
+  g('panelMenuWrap').classList.add('hidden');
 }
 
-function maybeCloseAdd(e) { if (e.target === g('addOverlay')) closeAll(); }
-
-function closeAll() {
-  pickerI = 2; pickerU = 2; pickerS = 3; addAgency = 'solo';
-  document.querySelectorAll('#addModal .agency-btn').forEach(b => b.classList.toggle('active', b.dataset.agency === 'solo'));
-  g('addContextRow').classList.remove('visible');
-  closeModal('addOverlay');
+function _panelCreateResetTabs() {
+  if (activePanelTab) {
+    const prev = g('pTab' + cap(activePanelTab)); if (prev) prev.classList.add('hidden');
+    const btn  = g('pCtx' + cap(activePanelTab)); if (btn)  btn.setAttribute('aria-pressed','false');
+    activePanelTab = null;
+  }
 }
 
-function updatePreview() {
-  const sc = calcScore(pickerI, pickerU, pickerS), tier = getTier(sc);
-  updateOrb(sc, tier.key);
-  g('scoreOrbTier').textContent = tierUI(tier.key).label; g('scoreOrbTier').style.color = tierUI(tier.key).color;
-  g('scoreOrbNudge').textContent = tierUI(tier.key).nudge;
+function openPanelCreate(name) {
+  panelMode = 'create'; activeId = null; addingBrick = false;
+  _panelCreateResetTabs();
+  _panelCreateDefaults();
+  const noteEl = g('pNote'); noteEl.value = ''; noteEl.style.height = 'auto';
+  const nameEl = g('pNameInput'); nameEl.value = name || ''; setTimeout(() => autoResize(nameEl), 0);
+  g('panelTriageBar').classList.add('hidden');
+  g('btnPanelTriageSkip').classList.add('hidden');
+  g('btnPanelTriageDel').classList.add('hidden');
+  pfShow('create');
+  openModal('overlay');
+  openPanelTab('score');
+  setTimeout(() => { const el = g('pNameInput'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 60);
 }
 
-function setCreationAxis(axis, val, rangeId, wordId, words, tickDim, color) {
-  if (axis === 'i') pickerI = val; else if (axis === 'u') pickerU = val; else pickerS = val;
-  if (navigator.vibrate && axis !== 's') navigator.vibrate(8);
-  paintTrack(rangeId, val, color);
-  const el = g(rangeId); if (el) el.value = val;
-  g(wordId).textContent = words[val];
-  highlightTicks(tickDim, val, color);
-  if (axis === 's') document.querySelectorAll('.sim-seg').forEach(el => el.classList.toggle('active', +el.dataset.val === val));
-  updatePreview();
+function openTriage() {
+  if (!inbox.length) return;
+  panelTriageQueue = [...inbox]; panelTriageIdx = 0;
+  _openPanelTriageCard();
 }
 
-function setImportance(v) { setCreationAxis('i', v, 'impRange', 'impWord', IMP_WORDS, 'imp', 'var(--fire)'); }
-function setUrgency(v)    { setCreationAxis('u', v, 'urgRange', 'urgWord', URG_WORDS, 'urg', 'var(--activate)'); }
-function setSimplicity(v) { setCreationAxis('s', v, 'simRange', 'simWord', SIM_WORDS, 'sim', 'var(--latent)'); }
+function openTriageFor(id) {
+  const item = inbox.find(t => t.id === id); if (!item) return;
+  panelTriageQueue = [item, ...inbox.filter(t => t.id !== id)]; panelTriageIdx = 0;
+  _openPanelTriageCard();
+}
+
+function _openPanelTriageCard() {
+  const item = panelTriageQueue[panelTriageIdx]; if (!item) { closePanel(); renderInbox(); return; }
+  panelMode = 'triage'; activeId = null; addingBrick = false;
+  _panelCreateResetTabs();
+  _panelCreateDefaults();
+  const nameEl = g('pNameInput'); nameEl.value = item.name; setTimeout(() => autoResize(nameEl), 0);
+  const noteEl = g('pNote'); noteEl.value = item.note || ''; setTimeout(() => autoResize(noteEl), 0);
+  g('panelTriageBar').classList.remove('hidden');
+  g('panelTriageProgress').textContent = panelTriageQueue.length > 1 ? `${panelTriageIdx + 1} of ${panelTriageQueue.length}` : '';
+  g('panelTriageAge').textContent = TRIAGE_CAPTURED(fmtAgo(item.capturedAt));
+  g('btnPanelTriageSkip').classList.toggle('hidden', panelTriageQueue.length <= 1);
+  g('btnPanelTriageDel').classList.remove('hidden');
+  pfShow('create');
+  openModal('overlay');
+  openPanelTab('score');
+  setTimeout(() => { const el = g('pNameInput'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 60);
+}
+
+function addTaskFromPanel() {
+  const name = (g('pNameInput').value || '').trim(); if (!name) { g('pNameInput').focus(); return; }
+  const i = +g('eImp').value, u = +g('eUrg').value, s = +g('eSim').value;
+  const agency = (document.querySelector('.panel .agency-btn.active') || {}).dataset.agency || 'solo';
+  const context = (g('panelContextInput').value || '').trim();
+  const note = g('pNote').value || '';
+  if (panelMode === 'triage') {
+    const item = panelTriageQueue[panelTriageIdx]; if (!item) return;
+    commitTask(() => {
+      tasks.push(makeTask(item.id, name, i, u, s, agency, context, note, item.capturedAt));
+      inbox = inbox.filter(t => t.id !== item.id);
+    });
+    panelTriageQueue.splice(panelTriageIdx, 1);
+    render(); renderInbox();
+    if (panelTriageQueue.length) { panelTriageIdx = Math.min(panelTriageIdx, panelTriageQueue.length - 1); _openPanelTriageCard(); }
+    else closePanel();
+  } else {
+    commitTask(() => tasks.push(makeTask(Date.now(), name, i, u, s, agency, context, note, Date.now())));
+    g('quickInput').value = '';
+    closePanel(); render();
+  }
+}
+
+function panelTriageSkip() {
+  if (panelTriageQueue.length <= 1) return;
+  panelTriageQueue.push(panelTriageQueue.splice(panelTriageIdx, 1)[0]);
+  if (panelTriageIdx >= panelTriageQueue.length) panelTriageIdx = 0;
+  _openPanelTriageCard();
+}
+
+function panelTriageDelete() {
+  const item = panelTriageQueue[panelTriageIdx]; if (!item) return;
+  inbox = inbox.filter(t => t.id !== item.id); save(); renderInbox();
+  panelTriageQueue.splice(panelTriageIdx, 1);
+  if (panelTriageQueue.length) { panelTriageIdx = Math.min(panelTriageIdx, panelTriageQueue.length - 1); _openPanelTriageCard(); }
+  else closePanel();
+}
 
 // ─── TASK CRUD ───────────────────────────────────────────────────────────────
 
 function makeTask(id, name, i, u, s, agency, context, note, createdAt) {
   const sc = calcScore(i, u, s);
   return { id, name, i, u, s, sc, tier:getTier(sc), done:false, bricks:[], createdAt, doneAt:null, views:[], edits:[], agency, context, note, links:[] };
-}
-
-function addTask() {
-  const inp = g('taskInput'), name = inp.value.trim(); if (!name) { inp.focus(); return; }
-  commitTask(() => tasks.push(makeTask(Date.now(), name, pickerI, pickerU, pickerS, addAgency,
-    (g('addContextInput').value || '').trim(), g('addNote').value || '', Date.now())));
-  inp.value = ''; g('addContextInput').value = '';
-  const n = g('addNote'); n.value = ''; n.style.height = 'auto';
-  g('quickInput').value = '';
-  closeAll(); render();
 }
 
 // Remove a card's DOM wrapper and update its column's done badge count.
@@ -549,84 +607,6 @@ function renderInbox() {
   }).join('');
 }
 
-// ─── TRIAGE ──────────────────────────────────────────────────────────────────
-
-function openTriage() {
-  if (!inbox.length) return;
-  triageQueue = [...inbox]; triageIdx = 0; renderTriageCard(); openModal('triageOverlay');
-}
-
-function openTriageFor(id) {
-  const item = inbox.find(t => t.id === id); if (!item) return;
-  triageQueue = [item, ...inbox.filter(t => t.id !== id)]; triageIdx = 0;
-  renderTriageCard(); openModal('triageOverlay');
-}
-
-function renderTriageCard() {
-  const item = triageQueue[triageIdx]; if (!item) { closeTriage(); return; }
-  g('triageProgress').textContent = `${triageIdx + 1} of ${triageQueue.length}`;
-  const nameEl = g('triageTaskName'); nameEl.value = item.name; setTimeout(() => autoResize(nameEl), 0);
-  g('triageTaskAge').textContent = TRIAGE_CAPTURED(fmtAgo(item.capturedAt));
-  triageAgency = 'solo'; setTriageAgency('solo'); g('triageContextInput').value = '';
-  const noteEl = g('triageNote'); noteEl.value = item.note || ''; noteEl.style.height = 'auto';
-  setTimeout(() => { if (noteEl.value) autoResize(noteEl); }, 0);
-  paintSliders(SLIDERS_TRG, 2, 2, 3);
-  g('tImp').value = 2; g('tUrg').value = 2; g('tSim').value = 3;
-  triagePreview();
-}
-
-function triagePreview() {
-  const i = +g('tImp').value, u = +g('tUrg').value, s = +g('tSim').value;
-  paintSliders(SLIDERS_TRG, i, u, s);
-  const sc = calcScore(i, u, s), tier = getTier(sc);
-  updateTriageOrb(sc, tier.key);
-  g('tOrbTier').textContent = tierUI(tier.key).label; g('tOrbTier').style.color = tierUI(tier.key).color;
-}
-
-function triageSend() {
-  const item = triageQueue[triageIdx]; if (!item) return;
-  const name = (g('triageTaskName').value || '').trim() || item.name;
-  const i = +g('tImp').value, u = +g('tUrg').value, s = +g('tSim').value;
-  commitTask(() => {
-    tasks.push(makeTask(item.id, name, i, u, s, triageAgency,
-      (g('triageContextInput').value || '').trim(), g('triageNote').value || '', item.capturedAt));
-    inbox = inbox.filter(t => t.id !== item.id);
-  });
-  triageQueue.splice(triageIdx, 1);
-  if (!triageQueue.length) closeTriage(); else renderTriageCard();
-  renderInbox(); render();
-}
-
-function flushTriageEdits() {
-  const item = triageQueue[triageIdx]; if (!item) return;
-  const name = (g('triageTaskName').value || '').trim();
-  const note = (g('triageNote').value || '').trim();
-  if (name) item.name = name;
-  item.note = note;
-  const inboxItem = inbox.find(t => t.id === item.id);
-  if (inboxItem) { if (name) inboxItem.name = name; inboxItem.note = note; }
-  save();
-}
-
-function triageSkip() {
-  flushTriageEdits();
-  triageQueue.push(triageQueue.splice(triageIdx, 1)[0]);
-  if (triageIdx >= triageQueue.length) { closeTriage(); return; }
-  renderTriageCard();
-}
-
-function triageDelete() {
-  const item = triageQueue[triageIdx]; if (!item) return;
-  inbox = inbox.filter(t => t.id !== item.id);
-  triageQueue.splice(triageIdx, 1);
-  if (!triageQueue.length) { closeTriage(); save(); renderInbox(); return; }
-  if (triageIdx >= triageQueue.length) triageIdx = triageQueue.length - 1;
-  save(); renderTriageCard(); renderInbox();
-}
-
-function closeTriage()  { flushTriageEdits(); closeModal('triageOverlay'); triageQueue = []; triageIdx = 0; }
-function maybeTriage(e) { if (e.target === g('triageOverlay')) closeTriage(); }
-
 // ─── PANEL ACCORDION ─────────────────────────────────────────────────────────
 
 const PANEL_TABS = ['score', 'progress', 'links', 'agency'];
@@ -662,6 +642,11 @@ function updatePanelCtxBar(t) {
 
 function openPanel(id) {
   activeId = id; addingBrick = false;
+  panelMode = 'view';
+  g('pCtxProgress').classList.remove('hidden');
+  g('pCtxLinks').classList.remove('hidden');
+  g('panelMenuWrap').classList.remove('hidden');
+  g('panelTriageBar').classList.add('hidden');
   // Reset tab state so auto-select always opens fresh
   if (activePanelTab) {
     const prevTab = g('pTab' + cap(activePanelTab)); if (prevTab) prevTab.classList.add('hidden');
@@ -680,6 +665,11 @@ function openPanel(id) {
 
 function closePanel() {
   activeId = null; addingBrick = false;
+  panelMode = 'view';
+  g('pCtxProgress').classList.remove('hidden');
+  g('pCtxLinks').classList.remove('hidden');
+  g('panelMenuWrap').classList.remove('hidden');
+  g('panelTriageBar').classList.add('hidden');
   activePanelTab = null;
   PANEL_TABS.forEach(k => {
     const p = g('pTab' + cap(k)); if (p) p.classList.add('hidden');
@@ -917,7 +907,7 @@ function timerSyncFooter(taskId) {
 }
 
 function pfShow(state) {
-  const ids = { idle:'pfIdle', picking:'pfPicking', running:'pfRunning' };
+  const ids = { idle:'pfIdle', picking:'pfPicking', running:'pfRunning', create:'pfCreate' };
   Object.entries(ids).forEach(([k, id]) => {
     const el = g(id); if (!el) return;
     el.classList.toggle('pf-state--hidden', k !== state);
@@ -1130,9 +1120,16 @@ function renderPanelLinks(id) {
 }
 
 function updateEditPreview() {
-  const t = byId(activeId); if (!t) return;
   const i = +g('eImp').value, u = +g('eUrg').value, s = +g('eSim').value;
   paintSliders(SLIDERS_EDIT, i, u, s);
+  if (panelMode === 'create' || panelMode === 'triage') {
+    const sc = calcScore(i, u, s), tier = getTier(sc);
+    updatePanelOrb(sc, tier.key);
+    g('pTier').textContent = tierUI(tier.key).label; g('pTier').style.color = tierUI(tier.key).color;
+    g('pNudge').textContent = tierUI(tier.key).nudge;
+    return;
+  }
+  const t = byId(activeId); if (!t) return;
   const newSc = calcScore(i, u, s), newTier = getTier(newSc), delta = newSc - t.sc;
   const changed = i !== t.i || u !== t.u || s !== t.s;
   const bar = g('pScoreBar');
@@ -1911,7 +1908,9 @@ document.addEventListener('click', e => {
   switch (action) {
     case 'open-panel':       e.stopPropagation(); openPanel(id);            break;
     case 'toggle-done':      e.stopPropagation(); toggleDone(id);           break;
-    case 'open-triage-for':  openTriageFor(id);                             break;
+    case 'open-triage-for':      openTriageFor(id);                             break;
+    case 'triage-panel-skip':    panelTriageSkip();                             break;
+    case 'triage-panel-delete':  panelTriageDelete();                           break;
     case 'delete-inbox':     e.stopPropagation(); deleteInboxItem(id);      break;
     case 'select-search':    selectSearchResult(id);                        break;
     case 'open-trophy':      openTrophy(id);                                break;
@@ -2075,9 +2074,9 @@ function _doSearch() {
     return `<div class="search-result${t.done?' sr-done':''}" data-action="select-search" data-id="${t.id}">
       <span class="sr-score" style="color:${tierUI(t.tier.key).color||'var(--muted)'}">${t.sc}</span>
       <div class="sr-body">
-        <div class="sr-name">${nm?highlight(t.name,q):t.name}${t.done?' <span style="font-size:10px;color:var(--muted)">✓ done</span>':''}</div>
+        <div class="sr-name">${nm?highlight(esc(t.name),q):t.name}${t.done?' <span style="font-size:10px;color:var(--muted)">✓ done</span>':''}</div>
         <div class="sr-meta"><span class="sr-zone sr-zone-${zone}">${ZL[zone]}</span><span class="sr-tier">${(tierUI(t.tier.key).label||'').split(' ')[0]} ${(tierUI(t.tier.key).label||'').replace(/^[^ ]+ /,'')}</span></div>
-        ${mc?`<div class="sr-match-context">${highlight(mc,q)}</div>`:''}
+        ${mc?`<div class="sr-match-context">${highlight(esc(mc),q)}</div>`:''}
       </div>
     </div>`;
   }).join('');
@@ -2113,8 +2112,6 @@ onEscapeCapture('linkTypeChooser',   closeLinkTypeChooser);
 onEscapeCapture('mergeModalOverlay', closeMergeModal);
 onEscapeCapture('linkSearchOverlay', closeLinkSearch);
 onEscapeCapture('searchOverlay',     closeSearch);
-onEscapeCapture('triageOverlay',     closeTriage);
-onEscapeCapture('addOverlay',        closeAll);
 onEscapeCapture('driftBoxOverlay',   closeDriftBox);
 onEscapeCapture('parkedOverlay',     closeParkedReview);
 onEscapeCapture('fireOverlay',       closeFireModal);
@@ -2164,30 +2161,11 @@ g('btnStuckClose').addEventListener('click', closeStuckModal);
 g('parkedOverlay').addEventListener('click', maybeCloseParked);
 g('btnParkedClose').addEventListener('click', closeParkedReview);
 
-// Add modal
-g('addOverlay').addEventListener('click', maybeCloseAdd);
-g('btnAddClose').addEventListener('click', closeAll);
-g('btnAddTask').addEventListener('click', addTask);
-
-// Agency buttons — delegated on each modal's agency-row parent
-document.querySelector('#addModal .agency-row').addEventListener('click', e => {
-  const btn = e.target.closest('.agency-btn[data-ctx="add"]');
-  if (btn) setAgency(btn.dataset.agency);
-});
+// Create panel
+g('btnPanelCreate').addEventListener('click', addTaskFromPanel);
 
 // Search overlay
 g('searchOverlay').addEventListener('click', maybeCloseSearch);
-
-// Triage modal
-g('triageOverlay').addEventListener('click', maybeTriage);
-g('btnTriageClose').addEventListener('click', closeTriage);
-g('btnTriSend').addEventListener('click', triageSend);
-g('btnTriSkip').addEventListener('click', triageSkip);
-g('btnTriDel').addEventListener('click', triageDelete);
-document.querySelector('.triage-modal .agency-row').addEventListener('click', e => {
-  const btn = e.target.closest('.agency-btn[data-ctx="triage"]');
-  if (btn) setTriageAgency(btn.dataset.agency);
-});
 
 // Done modal
 g('doneModalOverlay').addEventListener('click', maybeDoneClose);
@@ -2287,7 +2265,7 @@ g('mSim').addEventListener('input', mergePreview);
 
 // ─── CAPTURE BAR ─────────────────────────────────────────────────────────────
 
-g('taskInput').addEventListener('keydown', e => { if (e.key==='Enter') addTask(); });
+// (taskInput removed — quick capture now uses openPanelCreate via shift+enter)
 
 const quickInput  = g('quickInput');
 const captureWrap = g('captureWrap');
@@ -2296,7 +2274,7 @@ quickInput.addEventListener('focus', ()=>captureWrap.classList.add('focused'));
 quickInput.addEventListener('blur',  ()=>captureWrap.classList.remove('focused'));
 quickInput.addEventListener('keydown', e => {
   if (e.key!=='Enter') return; e.preventDefault();
-  if (e.shiftKey) { const n=quickInput.value.trim(); if(!n) return; quickInput.value=''; captureWrap.classList.remove('focused'); openScoreModal(n); }
+  if (e.shiftKey) { const n=quickInput.value.trim(); if(!n) return; quickInput.value=''; captureWrap.classList.remove('focused'); openPanelCreate(n); }
   else quickCapture();
 });
 
