@@ -81,6 +81,18 @@ function commitTask(fn) { fn(); rebuildTaskMap(); save(); }
 
 function openModal(id)  { g(id).classList.remove('hidden'); }
 function closeModal(id) { g(id).classList.add('hidden'); }
+
+// Attach a capture-phase Escape listener to an overlay element.
+// Fires before the global keydown handler — stops propagation so only the
+// topmost visible layer responds. Attach once at boot; guard on hidden state.
+function onEscapeCapture(overlayId, closeFn) {
+  g(overlayId).addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (g(overlayId).classList.contains('hidden')) return;
+    e.stopPropagation();
+    closeFn();
+  }, true);
+}
 function clearConfirms(){ ['mvFlowConfirm','mvDeepConfirm','mvDriftConfirm'].forEach(id => { const el = g(id); if (el) el.innerHTML = ''; }); }
 
 // Patch a single card in the already-rendered board without touching any other DOM.
@@ -784,25 +796,6 @@ function timerStartNow(taskId, mins) {
   timerSyncAll();
 }
 
-function playCompletionChime() {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const notes = [523.25, 659.25, 783.99]; // C5, E5, G5
-    notes.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      const t = ctx.currentTime + i * 0.22;
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(0.18, t + 0.04);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
-      osc.start(t); osc.stop(t + 0.7);
-    });
-  } catch(e) { /* audio not available — fail silently */ }
-}
-
 function timerFrame() {
   if (timerPaused) return;
   const rem = timerEndsAt - Date.now();
@@ -813,7 +806,6 @@ function timerFrame() {
     timerTaskId = null; timerEndsAt = null;
     timerSave();
     timerSyncAll();
-    playCompletionChime();
     timerShowPrompt(doneId, 'brick');
     return;
   }
@@ -1522,17 +1514,18 @@ function pickFlowSlots() {
   const pool = tasks.filter(t => !t.done && zoneFor(t) === 'flow');
   if (!pool.length) return [];
   const byScore = [...pool].sort((a,b) => b.sc - a.sc);
-  // Slot 1: highest score + untouched 7+ days
-  const avoided = byScore.filter(t => Date.now() - lastTouchedTs(t) > 7 * DAY_MS);
+  // Slot 1: highest score + untouched 7+ days — Fire tasks always compete on score only
+  const avoided = byScore.filter(t => t.tier.key !== 'fire' && Date.now() - lastTouchedTs(t) > 7 * DAY_MS);
   const slot1 = avoided.length ? avoided[0] : byScore[0];
   // Slot 2: highest score, not slot1
   const slot2 = byScore.find(t => t.id !== slot1.id) || null;
-  // Slot 3: wildcard — most untouched mid-priority (not already picked)
+  // Slot 3: remaining Fire tasks first, then most untouched (wildcard)
   const picked = new Set([slot1.id, slot2?.id].filter(Boolean));
   const wildPool = pool.filter(t => !picked.has(t.id));
-  const wildcard = wildPool.length
-    ? wildPool.sort((a,b) => lastTouchedTs(a) - lastTouchedTs(b))[0]
-    : null;
+  const remainingFire = wildPool.filter(t => t.tier.key === 'fire').sort((a,b) => b.sc - a.sc);
+  const wildcard = remainingFire.length
+    ? remainingFire[0]
+    : wildPool.sort((a,b) => lastTouchedTs(a) - lastTouchedTs(b))[0] || null;
   return [slot1, slot2, wildcard].filter(Boolean);
 }
 
@@ -2043,12 +2036,11 @@ function searchKeydown(e) {
   if      (e.key==='ArrowDown') { e.preventDefault(); searchSelectedIdx=Math.min(searchSelectedIdx+1,items.length-1); }
   else if (e.key==='ArrowUp')   { e.preventDefault(); searchSelectedIdx=Math.max(searchSelectedIdx-1,0); }
   else if (e.key==='Enter')  { const t=searchSelectedIdx>=0?searchResults[searchSelectedIdx]:searchResults.length===1?searchResults[0]:null; if (t) selectSearchResult(t.id); return; }
-  else if (e.key==='Escape') { closeSearch(); return; }
   items.forEach((el,i)=>el.classList.toggle('active',i===searchSelectedIdx));
   if (items[searchSelectedIdx]) items[searchSelectedIdx].scrollIntoView({block:'nearest'});
 }
 
-function selectSearchResult(id) { closeSearch(); openPanel(id); }
+function selectSearchResult(id) { closeSearch(); const t = byId(id); if (t?.done) openTrophy(id); else openPanel(id); }
 
 let _searchTimer = null;
 function renderSearch() {
@@ -2097,9 +2089,10 @@ function _doSearch() {
 document.addEventListener('keydown', e => {
   const inInput=['INPUT','TEXTAREA'].includes(document.activeElement.tagName);
   if (e.key==='Escape') {
-    [closeTriage,closeTrophy,closePanel,closeDoneModal,closeAll,
-     closeDriftBox,closeParkedReview,closeSearch,closeFireModal,closeStuckModal,closeDriftDrawer].forEach(fn=>fn());
-    if (boardPanelOpen) closeBoardPanel();
+    // Overlay-level Escape is handled by capture-phase listeners on each overlay.
+    // This fallback covers non-overlay layers only.
+    if (driftDrawerOpen) { closeDriftDrawer(); return; }
+    if (boardPanelOpen)  { closeBoardPanel();  return; }
     quickInput.blur(); return;
   }
   if (inInput) return;
@@ -2112,6 +2105,23 @@ document.addEventListener('keydown', e => {
 
 // ─── STATIC EVENT LISTENERS ──────────────────────────────────────────────────
 try {
+
+// ── Escape capture — each overlay closes only itself, topmost wins ──
+onEscapeCapture('timerModalOverlay', () => closeModal('timerModalOverlay'));
+onEscapeCapture('confirmOverlay',    () => closeModal('confirmOverlay'));
+onEscapeCapture('linkTypeChooser',   closeLinkTypeChooser);
+onEscapeCapture('mergeModalOverlay', closeMergeModal);
+onEscapeCapture('linkSearchOverlay', closeLinkSearch);
+onEscapeCapture('searchOverlay',     closeSearch);
+onEscapeCapture('triageOverlay',     closeTriage);
+onEscapeCapture('addOverlay',        closeAll);
+onEscapeCapture('driftBoxOverlay',   closeDriftBox);
+onEscapeCapture('parkedOverlay',     closeParkedReview);
+onEscapeCapture('fireOverlay',       closeFireModal);
+onEscapeCapture('stuckOverlay',      closeStuckModal);
+onEscapeCapture('trophyOverlay',     closeTrophy);
+onEscapeCapture('doneModalOverlay',  closeDoneModal);
+onEscapeCapture('overlay',           closePanel);
 
 // Header
 g('btnSearch').addEventListener('click', openSearch);
@@ -2258,7 +2268,6 @@ document.querySelector('.panel .agency-row').addEventListener('click', e => {
 g('linkSearchOverlay').addEventListener('click', e => { if (e.target === g('linkSearchOverlay')) closeLinkSearch(); });
 g('btnLinkSearchClose').addEventListener('click', closeLinkSearch);
 g('linkSearchInput').addEventListener('input', e => renderLinkSearch(e.target.value.trim()));
-g('linkSearchInput').addEventListener('keydown', e => { if (e.key === 'Escape') closeLinkSearch(); });
 
 // Link type chooser
 g('btnLinkBefore').addEventListener('click', () => applyLinkType('before'));
