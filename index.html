@@ -361,7 +361,7 @@
       <textarea class="panel-note mb-modal-field" id="addNote" rows="1"
         placeholder="Add a note…"
         spellcheck="false"
-        oninput="autoResizeNote(this)"></textarea>
+        oninput="autoResize(this)"></textarea>
 
       <!-- AGENCY SELECTOR -->
       <div class="agency-row">
@@ -469,13 +469,13 @@
 
     <textarea class="triage-task-input" id="triageTaskName" rows="1"
       spellcheck="false" autocomplete="off"
-      oninput="autoResizeTriageName(this)"
+      oninput="autoResize(this)"
       placeholder="Task name…"></textarea>
     <div class="triage-age" id="triageTaskAge"></div>
     <textarea class="panel-note mb-modal-field-lg" id="triageNote" rows="1"
       placeholder="Add a note…"
       spellcheck="false"
-      oninput="autoResizeNote(this)"></textarea>
+      oninput="autoResize(this)"></textarea>
 
     <!-- Agency for triage -->
     <div class="agency-row mb-agency-row">
@@ -624,14 +624,14 @@
           <div class="panel-tier" id="pTier"></div>
           <textarea class="panel-name-input" id="pNameInput" rows="1"
             spellcheck="false" autocomplete="off"
-            oninput="autoResizeName(this)"
+            oninput="autoResize(this)"
             onblur="commitNameEdit()"
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.blur();}"></textarea>
           <div class="panel-nudge" id="pNudge"></div>
           <textarea class="panel-note" id="pNote" rows="1"
             placeholder="Add a note…"
             spellcheck="false"
-            oninput="autoResizeNote(this)"
+            oninput="autoResize(this)"
             onblur="commitNoteEdit()"></textarea>
         </div>
       </div>
