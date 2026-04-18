@@ -4,7 +4,16 @@
 
 const fs = require('fs');
 const src = fs.readFileSync(__dirname + '/logic.js', 'utf8');
-const L   = new Function(src + '\nreturn { calcScore, getTier, zoneFor, buildZones, suggestTask, resolveDrop, urgencyAgeFrac, urgencyAgeLabel, lastTouchedTs, fmtDuration, fmtAgo, TIERS, DAY_MS, URG_HORIZON, SESSION_CAP };')();
+
+// Stub copy.js constants that logic.js references at runtime
+const stubs = `
+const REASON_HIGHEST = (zone) => 'Highest Matter score in ' + zone;
+const REASON_NEVER   = 'Never started';
+const REASON_BRICKS  = (n) => n + ' brick' + (n !== 1 ? 's' : '');
+const REASON_AGE     = (d) => d + 'd in board';
+`;
+
+const L   = new Function(stubs + src + '\nreturn { calcScore, getTier, zoneFor, buildZones, suggestTask, resolveDrop, urgencyAgeFrac, urgencyAgeLabel, lastTouchedTs, fmtDuration, fmtAgo, TIERS, DAY_MS, URG_HORIZON, SESSION_CAP };')();
 
 let passed = 0, failed = 0;
 

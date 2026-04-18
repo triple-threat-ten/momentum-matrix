@@ -14,7 +14,7 @@
   <header>
     <div class="header-inner">
     <div>
-      <span class="logo-mark">v25.1</span>
+      <span class="logo-mark">v25.2</span>
       <h1>Momentum<span>Matrix</span></h1>
       <p class="tagline">// capture · triage · act</p>
     </div>
@@ -333,94 +333,6 @@
     </div>
   </div>
 
-  <!-- FULL SCORE MODAL — opened via ⇧↵ from capture bar -->
-  <div class="add-overlay hidden" id="addOverlay">
-    <div class="add-modal" id="addModal">
-
-      <div class="add-modal-header">
-        <span class="add-modal-label">// score this task</span>
-        <button class="add-modal-close" id="btnAddClose">×</button>
-      </div>
-
-      <!-- SCORE ORB -->
-      <div class="score-orb-wrap">
-        <svg class="score-orb-svg" id="scoreOrbSvg" width="110" height="110" viewBox="0 0 120 120">
-          <circle class="score-orb-bg"    cx="60" cy="60" r="48"/>
-          <circle class="score-orb-ring"  id="scoreOrbRing" cx="60" cy="60" r="44"
-            stroke-dasharray="276.5" stroke-dashoffset="276.5" stroke="var(--accent)"/>
-          <circle class="score-orb-circle" id="scoreOrbCircle" cx="60" cy="60" r="6"
-            fill="var(--accent)" opacity="0.18"/>
-          <text class="score-orb-number"  id="scoreOrbNum" x="60" y="60"
-            font-size="28" fill="var(--text)">—</text>
-        </svg>
-        <div class="score-orb-tier"  id="scoreOrbTier">—</div>
-        <div class="score-orb-nudge" id="scoreOrbNudge"></div>
-      </div>
-
-      <input class="task-input" id="taskInput" type="text" placeholder="Task name…" autocomplete="off" />
-      <textarea class="panel-note mb-modal-field" id="addNote" rows="1"
-        placeholder="Add a note…"
-        spellcheck="false"
-        oninput="autoResize(this)"></textarea>
-
-      <!-- AGENCY SELECTOR -->
-      <div class="agency-row">
-        <span class="agency-lbl">Who acts?</span>
-        <button class="agency-btn active" data-agency="solo"    data-ctx="add">🙋 Mine</button>
-        <button class="agency-btn"        data-agency="shared"  data-ctx="add">🤝 Shared</button>
-        <button class="agency-btn"        data-agency="waiting" data-ctx="add">⏸ Waiting</button>
-      </div>
-      <div class="context-row" id="addContextRow">
-        <input class="context-input" id="addContextInput" type="text"
-          placeholder="Who's involved / what are you waiting for?" maxlength="120" />
-      </div>
-
-      <!-- SLIDERS -->
-      <div class="csliders">
-        <div class="cslider-row">
-          <div class="cslider-head">
-            <span class="cslider-name axis-imp">Importance</span>
-            <span class="cslider-word axis-imp" id="impWord">Useful</span>
-          </div>
-          <input type="range" id="impRange" min="1" max="4" step="1" value="2" oninput="setImportance(+this.value)"/>
-          <div class="cslider-ticks">
-            <span class="cslider-tick" data-dim="imp" data-val="1">Trivial</span>
-            <span class="cslider-tick" data-dim="imp" data-val="2">Useful</span>
-            <span class="cslider-tick" data-dim="imp" data-val="3">Important</span>
-            <span class="cslider-tick" data-dim="imp" data-val="4">Critical</span>
-          </div>
-        </div>
-        <div class="cslider-row">
-          <div class="cslider-head">
-            <span class="cslider-name axis-urg">Urgency</span>
-            <span class="cslider-word axis-urg" id="urgWord">Later</span>
-          </div>
-          <input type="range" id="urgRange" min="1" max="4" step="1" value="2" oninput="setUrgency(+this.value)"/>
-          <div class="cslider-ticks">
-            <span class="cslider-tick" data-dim="urg" data-val="1">Someday</span>
-            <span class="cslider-tick" data-dim="urg" data-val="2">Later</span>
-            <span class="cslider-tick" data-dim="urg" data-val="3">Soon</span>
-            <span class="cslider-tick" data-dim="urg" data-val="4">Now</span>
-          </div>
-        </div>
-        <div class="cslider-row">
-          <div class="cslider-head">
-            <span class="cslider-name axis-sim">Simplicity</span>
-            <span class="cslider-word axis-sim" id="simWord">Manageable</span>
-          </div>
-          <input type="range" id="simRange" min="1" max="4" step="1" value="3" oninput="setSimplicity(+this.value)"/>
-          <div class="cslider-ticks">
-            <span class="cslider-tick" data-dim="sim" data-val="1">Heavy</span>
-            <span class="cslider-tick" data-dim="sim" data-val="2">Tricky</span>
-            <span class="cslider-tick" data-dim="sim" data-val="3">Manageable</span>
-            <span class="cslider-tick" data-dim="sim" data-val="4">Effortless</span>
-          </div>
-        </div>
-      </div>
-
-      <button class="add-btn" id="btnAddTask">Add to Matrix</button>
-    </div>
-  </div>
 
 <!-- SEARCH OVERLAY -->
 <div class="search-overlay" id="searchOverlay">
@@ -440,102 +352,6 @@
       <span><span class="sf-key">↑↓</span> navigate</span>
       <span><span class="sf-key">↵</span> open task</span>
       <span><span class="sf-key">Esc</span> close</span>
-    </div>
-  </div>
-</div>
-
-<!-- TRIAGE MODAL -->
-<div class="triage-overlay hidden" id="triageOverlay">
-  <div class="triage-modal">
-    <button class="triage-close" id="btnTriageClose">×</button>
-    <div class="triage-header">
-      <span class="triage-section-lbl">// triage</span>
-      <span class="triage-progress" id="triageProgress"></span>
-    </div>
-
-    <!-- Triage orb -->
-    <div class="score-orb-wrap mb-score-orb">
-      <svg class="score-orb-svg" width="96" height="96" viewBox="0 0 120 120">
-        <circle class="score-orb-bg"     cx="60" cy="60" r="48"/>
-        <circle class="score-orb-ring"   id="tOrbRing" cx="60" cy="60" r="44"
-          stroke-dasharray="276.5" stroke-dashoffset="276.5" stroke="#787888"/>
-        <circle class="score-orb-circle" id="tOrbCircle" cx="60" cy="60" r="6"
-          fill="#787888" opacity="0.18"/>
-        <text   class="score-orb-number" id="tOrbNum" x="60" y="60"
-          font-size="26" fill="#8B90A0">—</text>
-      </svg>
-      <div class="score-orb-tier"  id="tOrbTier">—</div>
-    </div>
-
-    <textarea class="triage-task-input" id="triageTaskName" rows="1"
-      spellcheck="false" autocomplete="off"
-      oninput="autoResize(this)"
-      placeholder="Task name…"></textarea>
-    <div class="triage-age" id="triageTaskAge"></div>
-    <textarea class="panel-note mb-modal-field-lg" id="triageNote" rows="1"
-      placeholder="Add a note…"
-      spellcheck="false"
-      oninput="autoResize(this)"></textarea>
-
-    <!-- Agency for triage -->
-    <div class="agency-row mb-agency-row">
-      <span class="agency-lbl">Who acts?</span>
-      <button class="agency-btn active" data-agency="solo"    data-ctx="triage">🙋 Mine</button>
-      <button class="agency-btn"        data-agency="shared"  data-ctx="triage">🤝 Shared</button>
-      <button class="agency-btn"        data-agency="waiting" data-ctx="triage">⏸ Waiting</button>
-    </div>
-    <div class="context-row" id="triageContextRow">
-      <input class="context-input" id="triageContextInput" type="text"
-        placeholder="Who's involved / what are you waiting for?" maxlength="120"/>
-    </div>
-
-    <!-- Sliders -->
-    <div class="csliders">
-      <div class="cslider-row">
-        <div class="cslider-head">
-          <span class="cslider-name axis-imp">Importance</span>
-          <span class="cslider-word axis-imp" id="tImpWord">Useful</span>
-        </div>
-        <input type="range" id="tImp" min="1" max="4" step="1" value="2" oninput="triagePreview()"/>
-        <div class="cslider-ticks">
-          <span class="cslider-tick" data-dim="timp" data-val="1">Trivial</span>
-          <span class="cslider-tick" data-dim="timp" data-val="2">Useful</span>
-          <span class="cslider-tick" data-dim="timp" data-val="3">Important</span>
-          <span class="cslider-tick" data-dim="timp" data-val="4">Critical</span>
-        </div>
-      </div>
-      <div class="cslider-row">
-        <div class="cslider-head">
-          <span class="cslider-name axis-urg">Urgency</span>
-          <span class="cslider-word axis-urg" id="tUrgWord">Later</span>
-        </div>
-        <input type="range" id="tUrg" min="1" max="4" step="1" value="2" oninput="triagePreview()"/>
-        <div class="cslider-ticks">
-          <span class="cslider-tick" data-dim="turg" data-val="1">Someday</span>
-          <span class="cslider-tick" data-dim="turg" data-val="2">Later</span>
-          <span class="cslider-tick" data-dim="turg" data-val="3">Soon</span>
-          <span class="cslider-tick" data-dim="turg" data-val="4">Now</span>
-        </div>
-      </div>
-      <div class="cslider-row">
-        <div class="cslider-head">
-          <span class="cslider-name axis-sim">Simplicity</span>
-          <span class="cslider-word axis-sim" id="tSimWord">Manageable</span>
-        </div>
-        <input type="range" id="tSim" min="1" max="4" step="1" value="3" oninput="triagePreview()"/>
-        <div class="cslider-ticks">
-          <span class="cslider-tick" data-dim="tsim" data-val="1">Heavy</span>
-          <span class="cslider-tick" data-dim="tsim" data-val="2">Tricky</span>
-          <span class="cslider-tick" data-dim="tsim" data-val="3">Manageable</span>
-          <span class="cslider-tick" data-dim="tsim" data-val="4">Effortless</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="triage-actions">
-      <button class="btn-tri-send" id="btnTriSend">→ Send to Matrix</button>
-      <button class="btn-tri-skip" id="btnTriSkip">Skip</button>
-      <button class="btn-tri-del"  id="btnTriDel">Delete</button>
     </div>
   </div>
 </div>
@@ -606,6 +422,14 @@
             Delete task
           </button>
         </div>
+      </div>
+
+      <!-- Triage navigation — visible only in triage mode -->
+      <div class="panel-triage-bar hidden" id="panelTriageBar">
+        <span class="panel-triage-progress" id="panelTriageProgress"></span>
+        <span class="panel-triage-age" id="panelTriageAge"></span>
+        <button class="panel-triage-skip" data-action="triage-panel-skip">Skip →</button>
+        <button class="panel-triage-del" data-action="triage-panel-delete">Delete</button>
       </div>
 
       <div class="panel-header">
@@ -815,6 +639,15 @@
             </svg>
           </button>
           <button class="pf-btn-stop" id="pfBtnStop">Stop</button>
+        </div>
+      </div>
+
+      <!-- Create / triage mode footer -->
+      <div class="pf-state pf-state--hidden" id="pfCreate">
+        <div class="panel-actions">
+          <button class="btn-pstart" id="btnPanelCreate">Add to Matrix</button>
+          <button class="btn-pdone pf-triage-skip hidden" id="btnPanelTriageSkip" data-action="triage-panel-skip">Skip</button>
+          <button class="btn-pdone pf-triage-del hidden" id="btnPanelTriageDel" data-action="triage-panel-delete">Delete</button>
         </div>
       </div>
 
