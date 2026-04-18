@@ -197,8 +197,8 @@ function _panelCreateDefaults() {
   applyAgencyUI('.panel .agency-btn', 'panelContextRow', 'panelContextInput', 'solo');
   g('panelContextInput').value = '';
   g('panelDriftPrompt').className = 'panel-drift-prompt';
-  g('pCtxProgress').classList.add('hidden');
-  g('pCtxLinks').classList.add('hidden');
+  g('pCtxProgress').classList.remove('hidden');
+  g('pCtxLinks').classList.remove('hidden');
   g('panelMenuWrap').classList.add('hidden');
 }
 
@@ -217,8 +217,9 @@ function openPanelCreate(name) {
   const noteEl = g('pNote'); noteEl.value = ''; noteEl.style.height = 'auto';
   const nameEl = g('pNameInput'); nameEl.value = name || ''; setTimeout(() => autoResize(nameEl), 0);
   g('panelTriageBar').classList.add('hidden');
-  g('btnPanelTriageSkip').classList.add('hidden');
+  g('btnPanelTriageSkip').classList.remove('hidden');
   g('btnPanelTriageDel').classList.add('hidden');
+  g('btnPanelCreateDel').classList.remove('hidden');
   pfShow('create');
   openModal('overlay');
   openPanelTab('score');
@@ -249,6 +250,7 @@ function _openPanelTriageCard() {
   g('panelTriageAge').textContent = TRIAGE_CAPTURED(fmtAgo(item.capturedAt));
   g('btnPanelTriageSkip').classList.remove('hidden');
   g('btnPanelTriageDel').classList.remove('hidden');
+  g('btnPanelCreateDel').classList.add('hidden');
   pfShow('create');
   openModal('overlay');
   openPanelTab('score');
@@ -279,10 +281,19 @@ function addTaskFromPanel() {
 }
 
 function panelTriageSkip() {
+  if (panelMode === 'create') {
+    const name = (g('pNameInput').value || '').trim();
+    if (name) { const id = Date.now(); inbox.push({ id, name, note: g('pNote').value || '', capturedAt: id }); save(); }
+    closePanel(); renderInbox(); return;
+  }
   if (panelTriageQueue.length <= 1) { closePanel(); renderInbox(); return; }
   panelTriageQueue.push(panelTriageQueue.splice(panelTriageIdx, 1)[0]);
   if (panelTriageIdx >= panelTriageQueue.length) panelTriageIdx = 0;
   _openPanelTriageCard();
+}
+
+function panelCreateDelete() {
+  closePanel();
 }
 
 function panelTriageDelete() {
@@ -1911,6 +1922,7 @@ document.addEventListener('click', e => {
     case 'open-triage-for':      openTriageFor(id);                             break;
     case 'triage-panel-skip':    panelTriageSkip();                             break;
     case 'triage-panel-delete':  panelTriageDelete();                           break;
+    case 'create-panel-delete':  panelCreateDelete();                           break;
     case 'delete-inbox':     e.stopPropagation(); deleteInboxItem(id);      break;
     case 'select-search':    selectSearchResult(id);                        break;
     case 'open-trophy':      openTrophy(id);                                break;

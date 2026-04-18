@@ -14,7 +14,7 @@
   <header>
     <div class="header-inner">
     <div>
-      <span class="logo-mark">v25.2</span>
+      <span class="logo-mark">v25.3</span>
       <h1>Momentum<span>Matrix</span></h1>
       <p class="tagline">// capture · triage · act</p>
     </div>
@@ -397,6 +397,14 @@
 <div class="overlay hidden" id="overlay">
   <div class="panel" id="panel">
 
+    <!-- Triage mode bar — flush top, full width -->
+    <div class="panel-triage-bar hidden" id="panelTriageBar">
+      <span class="panel-triage-progress" id="panelTriageProgress"></span>
+      <span class="panel-triage-divider"></span>
+      <span class="panel-triage-age" id="panelTriageAge"></span>
+      <span class="panel-triage-label">TRIAGE</span>
+    </div>
+
     <div class="panel-static">
       <button class="panel-close" id="btnPanelClose" style="display:none">×</button>
 
@@ -422,13 +430,6 @@
             Delete task
           </button>
         </div>
-      </div>
-
-      <!-- Triage navigation — visible only in triage mode -->
-      <div class="panel-triage-bar hidden" id="panelTriageBar">
-        <span class="panel-triage-progress" id="panelTriageProgress"></span>
-        <span class="panel-triage-age" id="panelTriageAge"></span>
-
       </div>
 
       <div class="panel-header">
@@ -478,7 +479,7 @@
         </button>
         <button class="panel-ctx-cell" id="pCtxLinks"    onclick="openPanelTab('links')"    aria-pressed="false">
           <span class="panel-ctx-val" id="pCtxLinksVal">0</span>
-          <span class="panel-ctx-name">Links</span>
+          <span class="panel-ctx-name">Dependencies</span>
         </button>
         <button class="panel-ctx-cell" id="pCtxAgency"   onclick="openPanelTab('agency')"   aria-pressed="false">
           <span class="panel-ctx-val" id="pCtxAgencyVal">—</span>
@@ -647,6 +648,7 @@
           <button class="btn-pstart" id="btnPanelCreate">Add to Matrix</button>
           <button class="btn-pdone pf-triage-skip hidden" id="btnPanelTriageSkip" data-action="triage-panel-skip">Skip</button>
           <button class="btn-pdone pf-triage-del hidden" id="btnPanelTriageDel" data-action="triage-panel-delete">Delete</button>
+          <button class="btn-pdone pf-triage-del hidden" id="btnPanelCreateDel" data-action="create-panel-delete">Delete</button>
         </div>
       </div>
 
