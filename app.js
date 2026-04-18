@@ -247,7 +247,7 @@ function _openPanelTriageCard() {
   g('panelTriageBar').classList.remove('hidden');
   g('panelTriageProgress').textContent = panelTriageQueue.length > 1 ? `${panelTriageIdx + 1} of ${panelTriageQueue.length}` : '';
   g('panelTriageAge').textContent = TRIAGE_CAPTURED(fmtAgo(item.capturedAt));
-  g('btnPanelTriageSkip').classList.toggle('hidden', panelTriageQueue.length <= 1);
+  g('btnPanelTriageSkip').classList.remove('hidden');
   g('btnPanelTriageDel').classList.remove('hidden');
   pfShow('create');
   openModal('overlay');
@@ -279,7 +279,7 @@ function addTaskFromPanel() {
 }
 
 function panelTriageSkip() {
-  if (panelTriageQueue.length <= 1) { closePanel(); return; }
+  if (panelTriageQueue.length <= 1) { closePanel(); renderInbox(); return; }
   panelTriageQueue.push(panelTriageQueue.splice(panelTriageIdx, 1)[0]);
   if (panelTriageIdx >= panelTriageQueue.length) panelTriageIdx = 0;
   _openPanelTriageCard();
