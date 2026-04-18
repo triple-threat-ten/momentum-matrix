@@ -279,7 +279,7 @@ function addTaskFromPanel() {
 }
 
 function panelTriageSkip() {
-  if (panelTriageQueue.length <= 1) return;
+  if (panelTriageQueue.length <= 1) { closePanel(); return; }
   panelTriageQueue.push(panelTriageQueue.splice(panelTriageIdx, 1)[0]);
   if (panelTriageIdx >= panelTriageQueue.length) panelTriageIdx = 0;
   _openPanelTriageCard();
