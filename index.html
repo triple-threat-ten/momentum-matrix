@@ -7,6 +7,7 @@
 <title>Momentum Matrix</title>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<link rel="manifest" href="manifest.json">
 </head>
 <body>
 <div class="app">
@@ -14,7 +15,7 @@
   <header>
     <div class="header-inner">
     <div>
-      <span class="logo-mark">v25.3</span>
+      <span class="logo-mark">v25.2</span>
       <h1>Momentum<span>Matrix</span></h1>
       <p class="tagline">// capture · triage · act</p>
     </div>
@@ -806,6 +807,11 @@
 <script src="logic.js"></script>
 <script src="storage.js"></script>
 <script src="app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js');
+  }
+</script>
 
 </div><!-- /app -->
 </body>
