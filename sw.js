@@ -1,6 +1,6 @@
 // Momentum Matrix — Service Worker
 // Bump CACHE_NAME on every deploy to force cache refresh for returning users.
-const CACHE_NAME = 'mm-v25.2';
+const CACHE_NAME = 'mm-v25.4';
 
 const STATIC_FILES = [
   './',
