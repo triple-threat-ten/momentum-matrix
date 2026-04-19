@@ -287,8 +287,7 @@ function panelTriageSkip() {
     closePanel(); renderInbox(); return;
   }
   if (panelTriageQueue.length <= 1) { closePanel(); renderInbox(); return; }
-  panelTriageQueue.push(panelTriageQueue.splice(panelTriageIdx, 1)[0]);
-  if (panelTriageIdx >= panelTriageQueue.length) panelTriageIdx = 0;
+  panelTriageIdx = (panelTriageIdx + 1) % panelTriageQueue.length;
   _openPanelTriageCard();
 }
 
