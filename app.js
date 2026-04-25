@@ -4,7 +4,7 @@
 // ─── STATE ───────────────────────────────────────────────────────────────────
 
 let tasks = [], inbox = [];
-let activeId = null, addingBrick = false;
+let activeId = null, addingBrick = false, expandedBrickId = null;
 let panelMode = 'view'; // 'view' | 'create' | 'triage'
 let panelTriageQueue = [], panelTriageIdx = 0;
 // Halo panel state
@@ -623,6 +623,32 @@ function deleteBrick(taskId, brickId) {
   openPanel(taskId);
 }
 
+function addPlanned(taskId, text) {
+  text = text.trim(); if (!text) return;
+  const t = byId(taskId); if (!t) return;
+  commitTask(() => { t.planned.push({ id: Date.now() + Math.random(), text }); });
+  renderPanelContent(taskId);
+}
+
+function deletePlanned(taskId, plannedId) {
+  const t = byId(taskId); if (!t) return;
+  commitTask(() => { t.planned = t.planned.filter(p => String(p.id) !== String(plannedId)); });
+  renderPanelContent(taskId);
+}
+
+function promotePlanned(taskId, plannedId) {
+  const t = byId(taskId); if (!t) return;
+  const item = t.planned.find(p => String(p.id) === String(plannedId)); if (!item) return;
+  commitTask(() => {
+    t.bricks.push({ id: Date.now() + Math.random(), text: item.text, ts: Date.now() });
+    t.planned = t.planned.filter(p => String(p.id) !== String(plannedId));
+  });
+  renderBoardCard(taskId);
+  renderHaloPanel();
+  renderPeekDrawer();
+  renderPanelContent(taskId);
+}
+
 // ─── INBOX ───────────────────────────────────────────────────────────────────
 
 function quickCapture() {
@@ -686,7 +712,7 @@ function updatePanelCtxBar(t) {
 // ─── PANEL ───────────────────────────────────────────────────────────────────
 
 function openPanel(id) {
-  activeId = id; addingBrick = false;
+  activeId = id; addingBrick = false; expandedBrickId = null;
   panelMode = 'view';
   g('pCtxProgress').classList.remove('hidden');
   g('pCtxLinks').classList.remove('hidden');
@@ -1055,35 +1081,9 @@ function renderPanelContent(id) {
   paintSliders(SLIDERS_EDIT, t.i, t.u, t.s);
   g('eImp').value = t.i; g('eUrg').value = t.u; g('eSim').value = t.s;
 
-  // Bricks display
+  // Bricks list
   g('pBricksLabel').style.display = '';
-  const br = g('pBricks'); br.innerHTML = '';
-  g('pBrickDetail').classList.remove('show');
-
-  const shown = t.bricks.slice(-20);
-  if (t.bricks.length > shown.length) {
-    const sp = document.createElement('span');
-    sp.className = 'brick-overflow-count';
-    sp.textContent = `+${t.bricks.length - shown.length}`; br.appendChild(sp);
-  }
-  shown.forEach(b => {
-    const el = document.createElement('div'); el.className = 'brick-blk'; el.dataset.brickId = b.id;
-    el.onclick = e => {
-      e.stopPropagation();
-      const detail = g('pBrickDetail'), wasOpen = el.classList.contains('selected');
-      br.querySelectorAll('.brick-blk').forEach(x => x.classList.remove('selected'));
-      if (wasOpen) { detail.classList.remove('show'); return; }
-      el.classList.add('selected');
-      g('pBrickDetailText').textContent = b.text;
-      g('pBrickDetailTs').textContent   = fmtAgo(b.ts);
-      g('pBrickDetailDel').onclick = ev => { ev.stopPropagation(); deleteBrick(t.id, b.id); };
-      detail.classList.add('show');
-    };
-    br.appendChild(el);
-  });
-  for (let i = 0; i < Math.min(5, Math.max(0, 6 - shown.length)); i++) {
-    const s = document.createElement('div'); s.className = 'brick-slot'; br.appendChild(s);
-  }
+  renderBrickList(t);
 
   // Brick CTA
   const cta = g('pBrickCta');
@@ -1120,8 +1120,82 @@ function renderPanelContent(id) {
   if (sick) hEl.textContent = BRICK_HEALTH_MSG(t.bricks.length);
   hEl.classList.toggle('hidden', !sick);
 
+  // Planned bricks (next steps)
+  renderPlanned(t);
+
   // Linked tasks section
   renderPanelLinks(id);
+}
+
+function renderBrickList(t) {
+  const el = g('pBrickList'); if (!el) return;
+  const bricks = [...t.bricks].reverse(); // newest first
+  if (!bricks.length) { el.innerHTML = ''; return; }
+  let html = `<ul class="bl-list">`;
+  bricks.forEach(b => {
+    const isExp = String(b.id) === String(expandedBrickId);
+    html += `<li class="bl-row${isExp ? ' bl-expanded' : ''}" data-bid="${b.id}">
+      <div class="bl-sq bl-sq-laid"></div>
+      <div class="bl-text">${b.text.replace(/</g,'&lt;')}</div>
+      <span class="bl-ts">${fmtAgo(b.ts)}</span>
+      ${isExp ? `<button class="bl-del" data-bid="${b.id}">Remove</button>` : ''}
+    </li>`;
+  });
+  html += `</ul>`;
+  el.innerHTML = html;
+  el.querySelectorAll('.bl-row').forEach(row => {
+    row.addEventListener('click', e => {
+      e.stopPropagation();
+      if (e.target.closest('.bl-del')) return;
+      const bid = row.dataset.bid;
+      expandedBrickId = String(expandedBrickId) === String(bid) ? null : bid;
+      renderBrickList(t);
+    });
+  });
+  el.querySelectorAll('.bl-del').forEach(btn => {
+    btn.addEventListener('click', e => { e.stopPropagation(); deleteBrick(t.id, btn.dataset.bid); });
+  });
+}
+
+function renderPlanned(t) {
+  const el = g('pPlanned'); if (!el) return;
+  const items = t.planned || [];
+  let html = '';
+  if (items.length) {
+    html += `<div class="bl-divider">↓ steps</div><ul class="bl-list bl-steps">`;
+    items.forEach(p => {
+      html += `<li class="bl-row bl-step-row" data-pid="${p.id}">
+        <button class="bl-sq bl-sq-step" data-pid="${p.id}" title="Done — turns into a brick"></button>
+        <div class="bl-body">
+          <div class="bl-text">${p.text.replace(/</g,'&lt;')}</div>
+        </div>
+        <button class="bl-step-del" data-pid="${p.id}" title="Remove">×</button>
+      </li>`;
+    });
+    html += `</ul>`;
+  }
+  html += `<span class="brick-link step-link" id="stepLinkCta">+ What's the next step?</span>
+  <div class="step-input-row hidden" id="stepInputRow">
+    <input class="brick-input" id="stepInp" type="text" placeholder="What's the next concrete step?" maxlength="120"/>
+    <button class="btn-bsave" id="btnStepSave">Add</button>
+    <button class="btn-bcancel" id="btnStepCancel">Cancel</button>
+  </div>`;
+  el.innerHTML = html;
+
+  el.querySelectorAll('.bl-sq-step').forEach(btn => {
+    btn.addEventListener('click', e => { e.stopPropagation(); promotePlanned(t.id, btn.dataset.pid); });
+  });
+  el.querySelectorAll('.bl-step-del').forEach(btn => {
+    btn.addEventListener('click', () => deletePlanned(t.id, btn.dataset.pid));
+  });
+
+  const cta = g('stepLinkCta'), row = g('stepInputRow'), inp = g('stepInp');
+  const btnSave = g('btnStepSave'), btnCancel = g('btnStepCancel');
+  if (cta) cta.addEventListener('click', () => { cta.classList.add('hidden'); row.classList.remove('hidden'); setTimeout(() => inp && inp.focus(), 20); });
+  const doAdd = () => { if (inp && inp.value.trim()) addPlanned(t.id, inp.value); };
+  if (btnSave)   btnSave.addEventListener('click', doAdd);
+  if (btnCancel) btnCancel.addEventListener('click', () => { row.classList.add('hidden'); cta.classList.remove('hidden'); });
+  if (inp)       inp.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); if (e.key === 'Escape') { row.classList.add('hidden'); cta.classList.remove('hidden'); } });
 }
 
 function renderPanelLinks(id) {
@@ -1231,8 +1305,6 @@ function commitNameEdit() {
   if (name && name !== t.name) {
     commitTask(() => { t.name = name; });
     renderBoardCard(activeId);
-    renderHaloPanel();
-    renderPeekDrawer();
     renderPanelContent(activeId);
   } else if (!name && inp) { inp.value = t.name; autoResize(inp); }
 }
@@ -1243,8 +1315,6 @@ function commitNoteEdit() {
   if (el.value !== (t.note || '')) {
     commitTask(() => { t.note = el.value; });
     renderBoardCard(activeId);
-    renderHaloPanel();
-    renderPeekDrawer();
   }
 }
 
@@ -1652,7 +1722,7 @@ function renderHaloPanel() {
             <div class="halo-orb-num">${task.sc}</div>
           </div>
           <div class="halo-card-name"><button class="halo-card-name-btn" data-action="halo-open" data-id="${task.id}">${esc(task.name)}</button></div>
-          <div class="halo-card-pills">${pillHtml}</div>
+          <div class="halo-card-pills">${pillHtml}${task.bricks.length > 0 ? `<span class="halo-brick-badge">🧱 ${task.bricks.length}</span>` : ''}</div>
         </div>
         ${timerTaskId === task.id ? `<div class="halo-timer-running"><span class="halo-timer-dot"></span><span class="halo-timer-label" id="haloTimerLabel">–:–</span><button class="halo-timer-stop" data-action="timer-stop">Stop</button></div>` : `<button class="halo-btn-start" data-action="halo-start" data-id="${task.id}">${HALO_START_BTN}</button>`}
         <div class="halo-secondary-row">
@@ -1708,7 +1778,7 @@ function renderPeekDrawer() {
         <div class="${scCls}">${task.sc}</div>
         <div class="peek-row-body">
           <div class="peek-row-name">${esc(task.name)}</div>
-          <div class="peek-row-meta">${meta}</div>
+          <div class="peek-row-meta">${meta}${task.bricks.length > 0 ? `<span>·</span><span class="peek-brick-badge">🧱 ${task.bricks.length}</span>` : ''}</div>
         </div>
         ${timerTaskId === task.id ? `<span class="peek-row-running"><span class="halo-timer-dot"></span> running</span>` : `<button class="peek-row-start" data-action="halo-open" data-id="${task.id}">${HALO_FLOW_START_BTN}</button>`}
       </div>`;
@@ -1934,13 +2004,17 @@ function deepCardStyle(t) {
 // Treemap cell for Deep — top border in tier color, pastel fill, name + score only
 function mvDeepCellHtml(t, flexW) {
   const { hex, softBg, border } = deepCardStyle(t);
+  const bc = t.bricks ? t.bricks.length : 0;
   return `
   <div class="mv-tm-cell" style="flex:${flexW}" data-id="${t.id}" data-zone="deep" draggable="true" data-action="open-panel">
     <div class="mv-tm-card${t.done?' done-card':''}"
          style="background:${softBg};border:1px solid ${border};border-top-color:${hex}">
       <div class="mv-tm-inner">
         <div class="mv-tm-name">${esc(t.name)}${timerTaskId === t.id ? '<span class="card-timer-dot card-timer-dot--tm" title="Block running"></span>' : ''}</div>
-        <div class="mv-tm-score">${t.sc}</div>
+        <div class="mv-tm-foot">
+          ${bc > 0 ? `<span class="mv-tm-bricks">🧱 ${bc}</span>` : ''}
+          <div class="mv-tm-score">${t.sc}</div>
+        </div>
       </div>
     </div>
   </div>`;
@@ -2274,6 +2348,12 @@ g('pmDelete').addEventListener('click', () => {
 // Close menu when clicking outside
 document.addEventListener('click', e => {
   if (!g('panelMenuWrap').contains(e.target)) panelMenuClose();
+  // Collapse expanded brick if clicking outside the brick list
+  if (expandedBrickId !== null && !e.target.closest('#pBrickList')) {
+    expandedBrickId = null;
+    const t = activeId ? byId(activeId) : null;
+    if (t) renderBrickList(t);
+  }
 });
 g('btnPanelDone').addEventListener('click', () => { if (activeId) { toggleDone(activeId); closePanel(); } });
 

@@ -37,6 +37,7 @@ function migrateTask(t) {
   if (t.context  == null)  t.context   = '';
   if (t.note     == null)  t.note      = '';
   if (!t.links)            t.links     = [];
+  if (!t.planned)          t.planned   = [];
   return t;
 }
 
