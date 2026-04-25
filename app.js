@@ -200,6 +200,7 @@ function _panelCreateDefaults() {
   g('pCtxProgress').classList.remove('hidden');
   g('pCtxLinks').classList.remove('hidden');
   g('panelMenuWrap').classList.add('hidden');
+  pendingCreateLinks = [];
 }
 
 function _panelCreateResetTabs() {
@@ -274,7 +275,16 @@ function addTaskFromPanel() {
     if (panelTriageQueue.length) { panelTriageIdx = Math.min(panelTriageIdx, panelTriageQueue.length - 1); _openPanelTriageCard(); }
     else closePanel();
   } else {
-    commitTask(() => tasks.push(makeTask(Date.now(), name, i, u, s, agency, context, note, Date.now())));
+    const newId = Date.now();
+    commitTask(() => tasks.push(makeTask(newId, name, i, u, s, agency, context, note, newId)));
+    // Apply any links selected during creation
+    if (pendingCreateLinks.length) {
+      pendingCreateLinks.forEach(lnk => {
+        if (lnk.type === 'before') linkTasks(newId, lnk.targetId);
+        else                       linkTasks(lnk.targetId, newId);
+      });
+      pendingCreateLinks = [];
+    }
     g('quickInput').value = '';
     closePanel(); render();
   }
@@ -393,6 +403,7 @@ function mergeTasks(targetId, sourceId, newI, newU, newS) {
 
 // Link search state
 let linkSearchActive = false, linkSearchResults = [], linkSearchTaskId = null;
+let pendingCreateLinks = []; // { targetId, type } — links to apply on task creation
 
 function openLinkSearch(taskId) {
   linkSearchTaskId = taskId;
@@ -415,8 +426,12 @@ function closeLinkSearch() {
 
 function renderLinkSearch(q) {
   const el = g('linkSearchResults');
-  const cur = byId(linkSearchTaskId);
-  const linkedIds = new Set((cur?.links || []).map(l => l.targetId));
+  const isCreate = linkSearchTaskId === '__create__';
+  const cur = isCreate ? null : byId(linkSearchTaskId);
+  const linkedIds = new Set([
+    ...(cur?.links || []).map(l => l.targetId),
+    ...(isCreate ? pendingCreateLinks.map(l => l.targetId) : [])
+  ]);
   const lower = q.toLowerCase();
   const pool = tasks.filter(t =>
     t.id !== linkSearchTaskId && !t.done && !linkedIds.has(t.id) &&
@@ -449,7 +464,9 @@ let linkTypeState = null; // { fromId, toId }
 
 function openLinkTypeChooser(fromId, toId) {
   linkTypeState = { fromId, toId };
-  const from = byId(fromId), to = byId(toId);
+  // Create mode: fromId is '__create__', so we only have the target task
+  const from = fromId === '__create__' ? { name: 'new task' } : byId(fromId);
+  const to = byId(toId);
   if (!from || !to) return;
   const el = g('linkTypeChooser');
   el.classList.remove('hidden');
@@ -470,11 +487,22 @@ function closeLinkTypeChooser() {
 function applyLinkType(type) {
   if (!linkTypeState) return;
   const { fromId, toId } = linkTypeState;
+
+  // Create mode: store as pending instead of calling linkTasks
+  if (fromId === '__create__') {
+    if (type === 'before') {
+      pendingCreateLinks.push({ targetId: toId, type: 'before' }); // new task → before toId
+    } else if (type === 'after') {
+      pendingCreateLinks.push({ targetId: toId, type: 'after' });  // new task → after toId
+    }
+    closeLinkTypeChooser();
+    renderPanelLinks(null);
+    return;
+  }
+
   if (type === 'before') {
-    // fromId must happen before toId
     linkTasks(fromId, toId);
   } else if (type === 'after') {
-    // fromId happens after toId
     linkTasks(toId, fromId);
   } else if (type === 'merge') {
     closeLinkTypeChooser();
@@ -551,6 +579,8 @@ function toggleDone(id) {
       card.style.animation = 'doneOut .35s ease forwards'; card.style.pointerEvents = 'none';
       setTimeout(() => {
         removeCardFromDOM(id, zone);
+        renderHaloPanel();
+        renderPeekDrawer();
         const badgeMap = { flow: 'mvFlowDone', deep: 'mvDeepDone', drift: 'mvDriftDone' };
         const badge = g(badgeMap[zone]);
         if (badge) {
@@ -559,7 +589,7 @@ function toggleDone(id) {
           setTimeout(() => { badge.style.outline = ''; badge.style.outlineOffset = ''; }, 900);
         }
       }, 320);
-    } else { removeCardFromDOM(id, zone); }
+    } else { removeCardFromDOM(id, zone); renderHaloPanel(); renderPeekDrawer(); }
   } else render(); // reopening: card must re-appear, full render needed
 }
 
@@ -579,6 +609,8 @@ function addBrick(id, text) {
   commitTask(() => t.bricks.push({ id:Date.now() + Math.random(), text:text.trim(), ts:Date.now() }));
   addingBrick = false;
   renderBoardCard(id);
+  renderHaloPanel();
+  renderPeekDrawer();
   openPanel(id);
 }
 
@@ -586,6 +618,8 @@ function deleteBrick(taskId, brickId) {
   const t = byId(taskId); if (!t) return;
   commitTask(() => { t.bricks = t.bricks.filter(b => String(b.id) !== String(brickId)); });
   renderBoardCard(taskId);
+  renderHaloPanel();
+  renderPeekDrawer();
   openPanel(taskId);
 }
 
@@ -637,6 +671,7 @@ function openPanelTab(key) {
   activePanelTab = key;
   g('pTab' + cap(key)).classList.remove('hidden');
   g('pCtx' + cap(key)).setAttribute('aria-pressed', 'true');
+  if (key === 'links') renderPanelLinks(activeId);
 }
 
 function updatePanelCtxBar(t) {
@@ -1090,9 +1125,30 @@ function renderPanelContent(id) {
 }
 
 function renderPanelLinks(id) {
-  const t = byId(id);
   const el = g('pLinkedTasks');
   if (!el) return;
+
+  // Create mode: render pending links with search button
+  if (panelMode === 'create' || panelMode === 'triage') {    let html = '';
+    if (pendingCreateLinks.length) {
+      pendingCreateLinks.forEach((lnk, idx) => {
+        const t = byId(lnk.targetId); if (!t) return;
+        const col = TIER_HEX[t.tier.key] || 'var(--muted)';
+        const label = lnk.type === 'before' ? 'Required for' : 'Pending on';
+        html += `<div class="panel-link-group-label">${label}</div>
+          <div class="panel-link-chip">
+            <span class="plc-dot" style="background:${col}"></span>
+            <span class="plc-name">${esc(t.name)}</span>
+            <button class="plc-unlink" data-action="remove-pending-link" data-idx="${idx}">×</button>
+          </div>`;
+      });
+    }
+    html += `<div class="panel-link-add"><span class="link-add-btn" data-action="open-link-search" data-id="__create__">+ Link to another task</span></div>`;
+    el.innerHTML = html;
+    return;
+  }
+  const t = byId(id);
+  if (!t) return;
   const links = (t.links || []);
   if (!links.length) {
     el.innerHTML = `<div class="panel-link-add"><span class="link-add-btn" data-action="open-link-search" data-id="${t.id}">+ Link to another task</span></div>`;
@@ -1175,6 +1231,8 @@ function commitNameEdit() {
   if (name && name !== t.name) {
     commitTask(() => { t.name = name; });
     renderBoardCard(activeId);
+    renderHaloPanel();
+    renderPeekDrawer();
     renderPanelContent(activeId);
   } else if (!name && inp) { inp.value = t.name; autoResize(inp); }
 }
@@ -1185,6 +1243,8 @@ function commitNoteEdit() {
   if (el.value !== (t.note || '')) {
     commitTask(() => { t.note = el.value; });
     renderBoardCard(activeId);
+    renderHaloPanel();
+    renderPeekDrawer();
   }
 }
 
@@ -1939,6 +1999,7 @@ document.addEventListener('click', e => {
     case 'stuck-modal-brick':  stuckModalBrick(id);                         break;
     case 'open-link-search':   openLinkSearch(id);                          break;
     case 'ls-select':          selectLinkResult(+el.dataset.idx);           break;
+    case 'remove-pending-link': pendingCreateLinks.splice(+el.dataset.idx, 1); renderPanelLinks(null); break;
     case 'unlink-tasks':       unlinkTasks(id, +el.dataset.targetid);       break;
   }
 });
