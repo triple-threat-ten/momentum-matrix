@@ -1,6 +1,6 @@
 // Momentum Matrix — Service Worker
 // Bump CACHE_NAME on every deploy to force cache refresh for returning users.
-const CACHE_NAME = 'mm-v25.4.3';
+const CACHE_NAME = 'mm-v25.4.1';
 
 const STATIC_FILES = [
   './',
@@ -31,12 +31,19 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Fetch: serve from cache, fall back to network
+// Fetch: try network first, fall back to cache (ensures fresh deploys load immediately)
 self.addEventListener('fetch', event => {
   // Only handle same-origin requests (skip Google Fonts etc.)
   if (!event.request.url.startsWith(self.location.origin)) return;
 
   event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
+    fetch(event.request)
+      .then(response => {
+        // Update cache with fresh response
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
