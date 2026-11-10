@@ -223,3 +223,9 @@ const DB_END_TITLE  = 'All caught up.';
 const DB_END_SUB    = 'Every rating matches reality.';
 const DB_CLOSE      = 'Close';
 const UNDO_LET_GO   = (name) => `Let go of "${name.length > 40 ? name.slice(0, 38) + '…' : name}"`;
+
+// ─── Mobile (spec §5.2) ──────────────────────────────────────────────────────
+const BACK_BALANCED_SHORT  = '× Balanced';
+const BALANCED_LINE_MOBILE = 'The best mix of all three. Pick a mode below to match your energy.';
+const SHEET_INBOX          = 'Inbox';
+const SHEET_SEARCH         = 'Search';

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23E6EBF5'/%3E%3Ctext x='16' y='23' font-size='18' font-weight='800' font-family='system-ui,-apple-system,sans-serif' text-anchor='middle' letter-spacing='-1'%3E%3Ctspan fill='%231A1D2B'%3EM%3C/tspan%3E%3Ctspan fill='%236366F1'%3EM%3C/tspan%3E%3C/text%3E%3C/svg%3E">
 <title>HALO°</title>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -22,13 +22,14 @@
       <div class="header-actions">
         <button class="btn-driftbox" id="btnDriftBox" title="Tasks drifting away from you">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 7c3-2 6-2 9 0s6 2 9 0"/><path d="M3 13c3-2 6-2 9 0s6 2 9 0" opacity=".6"/><path d="M3 19c3-2 6-2 9 0s6 2 9 0" opacity=".3"/></svg>
-          Drift box · <span id="driftBoxCount">all clear</span>
+          <span class="db-label">Drift box · <span id="driftBoxCount">all clear</span></span>
+          <span class="db-total" id="driftBoxTotal" aria-hidden="true">0</span>
         </button>
         <button class="btn-inbox hidden" id="btnInbox" title="Triage captured items">Inbox · <span id="inboxCount">0</span></button>
         <button class="btn-search" id="btnSearch" title="Search tasks (/)" aria-label="Search tasks">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         </button>
-        <button class="btn-add" id="btnAdd" title="Capture a task (N)" aria-expanded="false">+ Add</button>
+        <button class="btn-add" id="btnAdd" title="Capture a task (N)" aria-label="Add a task" aria-expanded="false">+<span class="btn-add-label"> Add</span></button>
         <details class="hdr-more">
           <summary aria-label="More">···</summary>
           <div class="hdr-more-menu">
@@ -56,6 +57,11 @@
         <button class="capture-btn" id="btnCaptureInbox">Save to Inbox</button>
         <button class="capture-btn capture-btn-primary" id="btnCaptureRate">Rate now</button>
       </div>
+      <!-- Mobile only: Inbox entry and Search live in the "+" sheet -->
+      <div class="sheet-links">
+        <button class="sheet-link hidden" id="btnSheetInbox">Inbox · <span id="sheetInboxCount">0</span></button>
+        <button class="sheet-link" id="btnSheetSearch">Search</button>
+      </div>
     </div>
   </header>
 
@@ -65,6 +71,7 @@
   <main class="ctx-main" id="ctxMain">
 
     <section class="ctx-section" aria-label="Focus mode">
+      <div class="view-title" id="viewTitle"></div>
       <div class="ctx-status" id="ctxStatus"></div>
       <div class="mode-cards" id="modeCards" role="group" aria-label="Pick a mode to match your energy"></div>
     </section>
@@ -98,6 +105,9 @@
     <div class="ctx-foot" id="ctxFoot"></div>
 
   </main>
+
+  <!-- Mobile bottom bar — the three modes (§5.2) -->
+  <nav class="mode-bar" id="modeBar" aria-label="Pick a mode to match your energy"></nav>
 
 
   <!-- DRIFT BOX MODAL -->

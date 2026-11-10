@@ -3437,3 +3437,153 @@ header { transition: background-color var(--theme-t); }
   .capture-actions { justify-content: stretch; }
   .capture-btn { flex: 1; height: 44px; }
 }
+
+/* ═══ v26 MOBILE LAYOUT (spec §5.2) — ≤768px ═══════════════════════════════
+   Desktop hides the mobile-only parts; the media query below replaces the
+   interim narrow-screen rules written in sessions ②–④. */
+.view-title, .mode-bar, .c-sub, .db-total, .sheet-links { display: none; }
+
+@media (max-width: 768px) {
+  /* ── Header: wordmark · date + N active · Drift box pill · + · ··· ── */
+  .ctx-header { flex-wrap: nowrap; padding: 8px 12px 8px 16px; gap: 8px; }
+  .brand { flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+  .wordmark { font-size: 22px; }
+  .brand .logo-mark { display: none; }
+  .hdr-meta { display: flex; font-size: 10px; }
+  .header-actions { gap: 6px; flex-shrink: 0; }
+  .btn-inbox, .ctx-header .btn-search { display: none; }
+  .btn-driftbox { height: 44px; padding: 0 12px; gap: 6px; font-size: 13px; }
+  .btn-driftbox .db-label { display: none; }
+  .btn-driftbox svg { width: 16px; height: 16px; }
+  .db-total { display: inline; font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+  .btn-add { width: 44px; height: 44px; padding: 0; font-size: 22px; line-height: 1; }
+  .btn-add-label { display: none; }
+  .hdr-more summary { width: 44px; height: 44px; }
+
+  /* ── Main column: scrolls between header and bottom bar ── */
+  .ctx-main { padding: 14px 16px calc(104px + env(safe-area-inset-bottom)); }
+  .ctx-status, .mode-cards { display: none; }
+  .ctx-section { margin-bottom: 14px; }
+  .view-title { display: block; }
+  .vt-row { display: flex; align-items: center; gap: 10px; }
+  .vt-name { font-family: 'Sora', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -.01em; color: var(--accent-text); transition: color var(--theme-t); }
+  .vt-back {
+    position: relative; border: 1px solid var(--border2); background: var(--surface); color: var(--text2);
+    border-radius: 999px; padding: 6px 12px; font: 600 12px system-ui, sans-serif; cursor: pointer;
+  }
+  .vt-back::after { content: ''; position: absolute; inset: -6px -4px; }
+  .vt-line { margin-top: 4px; font-size: 13px; line-height: 1.4; color: var(--text2); }
+
+  /* ── Fire banner ── */
+  .fire-banner { min-height: 48px; padding: 10px 14px; gap: 10px; }
+
+  /* ── #1 card: ring + kicker/title, then everything full width ── */
+  .hero-card { grid-template-columns: 64px 1fr; gap: 6px 14px; padding: 18px; align-items: center; }
+  .hero-card .ring { width: 64px !important; height: 64px !important; grid-row: 1 / 3; }
+  .hero-card .ring svg { width: 100%; height: 100%; }
+  .hero-card .ring-num { font-size: 20px; }
+  .hero-body { display: contents; }
+  .hero-kicker { grid-column: 2; align-self: end; font-size: 10px; }
+  .hero-title { grid-column: 2; align-self: start; font-size: 21px; }
+  .hero-meta, .hero-card .axis-pills, .hero-actions { grid-column: 1 / -1; }
+  .hero-meta { margin-top: 6px; }
+  .hero-nudge { font-size: 13px; }
+  .hero-card .axis-pills { gap: 6px; margin-top: 6px; }
+  .hero-card .axis-pill { padding: 4px 8px; gap: 5px; font-size: 11px; }
+  .hero-actions { margin-top: 10px; }
+  .btn-onit { width: 100%; height: 52px; font-size: 16px; }
+  .hero-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .hero-picker-label { grid-column: 1 / -1; }
+  .hero-dur { height: 48px; padding: 0; }
+  .hero-dur-cancel { grid-column: 1 / -1; min-height: 44px; }
+
+  /* ── #2–#3: stacked compact cards ── */
+  .next-cards { grid-template-columns: 1fr; gap: 8px; margin-top: 8px; }
+  .next-card { padding: 12px 14px; gap: 12px; align-items: center; }
+  .next-card .ring { width: 44px !important; height: 44px !important; }
+  .next-card .ring svg { width: 100%; height: 100%; }
+  .next-card .ring-num { font-size: 13px; }
+  .next-title { font-size: 15px; }
+
+  /* Completion on mobile is in the task panel and the Drift box (§5.7) */
+  .row-check { display: none; }
+
+  /* Slipping badges stay small but get a 44px touch area */
+  .hero-card .slip-badge, .next-card .slip-badge { position: relative; padding: 4px 10px; }
+  .hero-card .slip-badge::after, .next-card .slip-badge::after { content: ''; position: absolute; inset: -10px -4px; }
+
+  /* ── List: rank · title + S·U·I line · Matter ── */
+  .list-section { margin-top: 20px; }
+  .list-head { display: none; }
+  .list-row {
+    grid-template-columns: 26px minmax(0, 1fr) 40px; grid-template-rows: auto auto;
+    height: auto; min-height: 58px; padding: 8px 14px 8px 12px; row-gap: 5px;
+  }
+  .list-row .c-rank   { grid-row: 1 / 3; align-self: center; }
+  .list-row .c-task   { grid-column: 2; grid-row: 1; }
+  .list-row .c-sub    { grid-column: 2; grid-row: 2; display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .list-row .c-matter { grid-column: 3; grid-row: 1 / 3; align-self: center; }
+  .list-row .c-ax, .list-row .c-task .slip-badge, .list-row .c-task .deep-badge { display: none; }
+  .c-name { font-size: 15px; }
+  .c-sub-ax { display: inline-flex; align-items: center; gap: 4px; }
+  .c-sub-ax b { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--muted); font-weight: 700; }
+  .c-sub .mbars i { width: 3px; height: 9px; }
+  .c-sub .slip-badge { font-size: 10px; padding: 1px 7px; cursor: default; }
+  .fold-btn { min-height: 48px; }
+
+  /* ── Bottom bar: the three modes ── */
+  .mode-bar {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 150;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+    background: var(--surface); border-top: 1px solid var(--border);
+    box-shadow: 0 -6px 20px rgba(26,29,43,.06); transition: background var(--theme-t);
+  }
+  .mode-tile {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    min-height: 64px; border-radius: 14px; cursor: pointer; background: transparent;
+    border: 1.5px solid transparent; color: var(--text2); font-family: system-ui, sans-serif;
+    transition: background var(--theme-t), border-color var(--theme-t);
+  }
+  .mt-icon { width: 22px; height: 22px; display: flex; }
+  .mt-icon svg { width: 22px; height: 22px; }
+  .mode-tile.mode-quick .mt-icon { color: #0F766E; } .mode-tile.mode-zone .mt-icon { color: #C2410C; } .mode-tile.mode-focus .mt-icon { color: #6D28D9; }
+  .mode-tile .energy { height: 10px; gap: 2px; }
+  .mode-tile .energy i { width: 4px; }
+  .mode-tile .energy i:nth-child(1) { height: 4px; } .mode-tile .energy i:nth-child(2) { height: 7px; } .mode-tile .energy i:nth-child(3) { height: 10px; }
+  .mt-name { font-size: 12px; font-weight: 700; }
+  .mode-tile.is-on { background: var(--accent-soft); border-color: var(--accent); }
+  .mode-tile.is-on .mt-name { color: var(--accent-text); }
+  .mode-tile.is-on .energy i.on { background: var(--accent); }
+  .mode-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ── "+" sheet: capture, plus Inbox and Search ── */
+  .sheet-links { display: flex; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .sheet-link {
+    flex: 1; height: 44px; border-radius: 10px; cursor: pointer;
+    border: 1.5px solid var(--border); background: var(--surface2); color: var(--text2); font: 600 13px system-ui, sans-serif;
+  }
+  .capture-pop { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+
+  /* ── Task panel as a bottom sheet ── */
+  .overlay { align-items: flex-end; padding: 0; }
+  .panel { max-width: none; border-radius: 20px 20px 0 0; max-height: 92vh; }
+  .panel-static { padding: 18px 16px 0; }
+  .panel-scroll { padding: 0 16px; }
+  .panel-footer { padding: 12px 16px calc(14px + env(safe-area-inset-bottom)); }
+  .btn-pstart, .btn-pdone, .pf-dur { min-height: 48px; }
+  .panel-menu-btn { width: 44px; height: 44px; }
+
+  /* Session card + toast clear of the bottom bar */
+  .ctx-main .halo-session-card { min-height: 180px; padding: 16px; }
+  .hsc-countdown { font-size: 52px; }
+  .hsc-footer { bottom: 14px; right: 14px; left: 14px; justify-content: flex-end; }
+  .hsc-btn-open, .hsc-btn-stop, .hsc-btn-pause { height: 44px; }
+  .hsc-btn-pause { width: 44px; }
+  .undo-toast { bottom: calc(92px + env(safe-area-inset-bottom)); }
+  .ctx-foot { flex-wrap: wrap; }
+  .done-link { min-height: 44px; }
+}
+@media (max-width: 768px) {
+  .search-footer, .search-shortcut { display: none; }
+}

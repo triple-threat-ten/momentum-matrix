@@ -354,6 +354,9 @@ function quickCapture() {
 function deleteInboxItem(id) { inbox = inbox.filter(t => t.id !== id); save(); renderInbox(); }
 
 function renderInbox() {
+  const sc = g('sheetInboxCount'), sb = g('btnSheetInbox');
+  if (sc) sc.textContent = inbox.length;
+  if (sb) sb.classList.toggle('hidden', inbox.length === 0);
   const btn = g('btnInbox'), count = g('inboxCount'); if (!btn || !count) return;
   count.textContent = inbox.length;
   btn.classList.toggle('hidden', inbox.length === 0);
@@ -978,7 +981,11 @@ function driftBoxCounts() {
 function updateDriftBoxBadge() {
   const { slipping, drifted } = driftBoxCounts();
   const el = g('driftBoxCount'); if (el) el.textContent = DRIFT_BTN_COUNTS(slipping, drifted);
-  const btn = g('btnDriftBox'); if (btn) btn.classList.toggle('is-empty', slipping + drifted === 0);
+  const tot = g('driftBoxTotal'); if (tot) tot.textContent = slipping + drifted;
+  const btn = g('btnDriftBox'); if (btn) {
+    btn.classList.toggle('is-empty', slipping + drifted === 0);
+    btn.setAttribute('aria-label', `Drift box: ${DRIFT_BTN_COUNTS(slipping, drifted)}`);
+  }
 }
 
 const driftBoxIsOpen = () => !g('driftBoxOverlay').classList.contains('hidden');
@@ -1132,7 +1139,9 @@ function render() {
 // ─── MAIN SCREEN (v26 Contexts) ──────────────────────────────────────────────
 // One ranked list that re-ranks by focus mode (spec §4–§5.1).
 
-const FOLD_ROWS = 16;                    // rows shown after #3 before "Show more" (desktop)
+const MOBILE_MQ = window.matchMedia('(max-width: 768px)');
+// Rows shown after #3 before "Show more": 16 on desktop, 7 on mobile (§5.1, §5.2)
+const foldRows = () => MOBILE_MQ.matches ? 7 : 16;
 const MODE_ORDER = ['quick', 'zone', 'focus'];   // Simplicity · Urgency · Importance
 const MODE_AXIS  = { quick:'s', zone:'u', focus:'i' };
 const MODE_ICONS = {
@@ -1206,7 +1215,25 @@ function renderHeaderMeta(nActive) {
 }
 
 function renderContext() {
-  const status = g('ctxStatus'), cards = g('modeCards');
+  const status = g('ctxStatus'), cards = g('modeCards'), title = g('viewTitle'), bar = g('modeBar');
+  const ui = MODE_UI[currentMode];
+  // Mobile view title (§5.2): mode name in the mode colour, one-line explanation, "× Balanced" pill
+  if (title) {
+    title.innerHTML = `<div class="vt-row"><h1 class="vt-name">${ui ? ui.name : BALANCED_TITLE}</h1>
+      ${ui ? `<button class="vt-back" data-action="back-balanced">${BACK_BALANCED_SHORT}</button>` : ''}</div>
+      <p class="vt-line">${ui ? ui.nudge : BALANCED_LINE_MOBILE}</p>`;
+  }
+  // Mobile bottom bar: the three mode tiles
+  if (bar) {
+    bar.innerHTML = MODE_ORDER.map(m => {
+      const mu = MODE_UI[m], on = currentMode === m;
+      return `<button class="mode-tile mode-${m}${on ? ' is-on' : ''}" data-action="set-mode" data-mode="${m}" aria-pressed="${on}">
+        <span class="mt-icon">${MODE_ICONS[m]}</span>
+        <span class="energy" aria-hidden="true">${[1,2,3].map(n => `<i${n <= mu.energy ? ' class="on"' : ''}></i>`).join('')}</span>
+        <span class="mt-name">${mu.name}</span>
+      </button>`;
+    }).join('');
+  }
   if (status) {
     status.innerHTML = currentMode === 'balanced'
       ? `<strong>${BALANCED_TITLE}</strong> · ${BALANCED_LINE}`
@@ -1280,6 +1307,7 @@ function listRowHtml(t, rank) {
   return `<div class="list-row${isDeep(t) ? ' is-deep' : ''}" data-action="open-panel" data-id="${t.id}" data-task-id="${t.id}" role="button" tabindex="0">
     <span class="c-rank">${rank}</span>
     <span class="c-task"><span class="c-name">${esc(t.name)}</span>${runningDotHtml(t)}${deepBadgeHtml(t)}${slipBadgeHtml(t)}</span>
+    <span class="c-sub" aria-hidden="true">${['s','u','i'].map(k => `<span class="c-sub-ax"><b>${AXIS_SHORT[k]}</b>${barsHtml(t[k], k === 'u' && lvl ? 'slip-' + lvl : '')}</span>`).join('')}${lvl ? `<span class="slip-badge slip-${lvl}">${esc(urgencyAgeLabel(t))}</span>` : ''}</span>
     <span class="c-ax" title="${AXIS_NAME.s}: ${SIM_WORDS[t.s]}">${barsHtml(t.s)}</span>
     <span class="c-ax" title="${AXIS_NAME.u}: ${URG_WORDS[t.u]}">${barsHtml(t.u, lvl ? 'slip-' + lvl : '')}</span>
     <span class="c-ax" title="${AXIS_NAME.i}: ${IMP_WORDS[t.i]}">${barsHtml(t.i)}</span>
@@ -1291,7 +1319,8 @@ function listRowHtml(t, rank) {
 function renderList(rest) {
   const el = g('listSection'); if (!el) return;
   if (!rest.length) { el.innerHTML = ''; return; }
-  const shown = foldOpen ? rest : rest.slice(0, FOLD_ROWS);
+  const fold = foldRows();
+  const shown = foldOpen ? rest : rest.slice(0, fold);
   const hidden = rest.length - shown.length;
   const active = MODE_AXIS[currentMode];
   const col = (k, label) => `<span class="c-ax${active === k ? ' is-active' : ''}">${label}${active === k ? ' ▾' : ''}</span>`;
@@ -1305,7 +1334,7 @@ function renderList(rest) {
       </div>
       ${shown.map((t, i) => listRowHtml(t, i + 4)).join('')}
     </div>
-    ${rest.length > FOLD_ROWS ? `<button class="fold-btn" data-action="fold-toggle" aria-expanded="${foldOpen}">
+    ${rest.length > fold ? `<button class="fold-btn" data-action="fold-toggle" aria-expanded="${foldOpen}">
       ${foldOpen ? FOLD_LESS : `<strong>${FOLD_MORE(hidden)}</strong> · ${FOLD_MORE_SUB}`}</button>` : ''}`;
 }
 
@@ -1619,6 +1648,11 @@ function captureRateNow() {
 }
 g('btnCaptureInbox').addEventListener('click', () => { quickCapture(); quickInput.focus(); });
 g('btnCaptureRate').addEventListener('click', captureRateNow);
+// Mobile "+" sheet also holds the Inbox entry and Search (§5.2, §5.4)
+g('btnSheetInbox').addEventListener('click', () => { closeCapture(); openTriage(); });
+g('btnSheetSearch').addEventListener('click', () => { closeCapture(); openSearch(); });
+// Switching between phone and desktop widths changes the fold size
+MOBILE_MQ.addEventListener('change', () => { foldOpen = false; renderMain(); updateHeaderOffset(); });
 // Click outside the popover closes it
 document.addEventListener('mousedown', e => {
   if (captureOpen && !e.target.closest('#captureRow, #btnAdd')) closeCapture();
