@@ -1,6 +1,6 @@
-// Momentum Matrix — Service Worker
+// HALO° — Service Worker
 // Bump CACHE_NAME on every deploy to force cache refresh for returning users.
-const CACHE_NAME = 'mm-v25.4.1';
+const CACHE_NAME = 'halo-v26.0';
 
 const STATIC_FILES = [
   './',

@@ -13,7 +13,7 @@ let foldOpen       = false;
 let heroPickerId   = null;   // task whose inline duration picker is open in the #1 card
 let captureOpen    = false;
 
-let doneModalZone = null, trophyTaskId = null;
+let doneModalOpen = false, trophyTaskId = null;
 
 // ── Timer state ──
 let timerTaskId        = null;  // id of task currently being timed
@@ -34,14 +34,6 @@ const ORB_MIN_R  = 8;
 const ORB_MAX_R  = 38;
 
 // IMP_WORDS, URG_WORDS, SIM_WORDS, TIER_UI, TIER_HEX, tierUI → copy.js
-
-// ─── DELTA FORMATTER ─────────────────────────────────────────────────────────
-function formatDelta(delta) {
-  const AXIS_WORDS = { i:IMP_WORDS, u:URG_WORDS, s:SIM_WORDS };
-  return Object.entries(delta)
-    .map(([ax, [from, to]]) => `${AXIS_NAME[ax]}  ${AXIS_WORDS[ax][from]} → ${AXIS_WORDS[ax][to]}`)
-    .join('  ·  ');
-}
 
 // ─── DOM HELPERS ─────────────────────────────────────────────────────────────
 
@@ -88,10 +80,6 @@ function onEscapeCapture(overlayId, closeFn) {
     closeFn();
   }, true);
 }
-// Re-render the main screen after a change that may affect one task's row or card.
-// (Kept under its old name so existing callers in the panel keep working.)
-function renderBoardCard() { renderMain(); }
-
 // ─── SCORE ORB ───────────────────────────────────────────────────────────────
 
 function renderOrb(ids, sc, tierKey) {
@@ -109,7 +97,6 @@ function renderOrb(ids, sc, tierKey) {
   n.textContent = sc > 0 ? sc : '—';
 }
 
-function updateOrb(sc, k)       { renderOrb({ circle:'scoreOrbCircle', ring:'scoreOrbRing', num:'scoreOrbNum' }, sc, k); }
 function updatePanelOrb(sc, k)  { renderOrb({ circle:'pOrbCircle',     ring:'pOrbRing',     num:'pOrbNum'     }, sc, k); }
 
 // ─── SLIDERS ─────────────────────────────────────────────────────────────────
@@ -308,14 +295,14 @@ function addBrick(id, text) {
   const t = byId(id); if (!t || !text?.trim()) return;
   commitTask(() => t.bricks.push({ id:Date.now() + Math.random(), text:text.trim(), ts:Date.now() }));
   addingBrick = false;
-  renderBoardCard(id);
+  renderMain();
   openPanel(id);
 }
 
 function deleteBrick(taskId, brickId) {
   const t = byId(taskId); if (!t) return;
   commitTask(() => { t.bricks = t.bricks.filter(b => String(b.id) !== String(brickId)); });
-  renderBoardCard(taskId);
+  renderMain();
   openPanel(taskId);
 }
 
@@ -339,7 +326,7 @@ function promotePlanned(taskId, plannedId) {
     t.bricks.push({ id: Date.now() + Math.random(), text: item.text, ts: Date.now() });
     t.planned = t.planned.filter(p => String(p.id) !== String(plannedId));
   });
-  renderBoardCard(taskId);
+  renderMain();
   renderPanelContent(taskId);
 }
 
@@ -852,7 +839,7 @@ function commitNameEdit() {
   const inp = g('pNameInput'), name = inp?.value.trim();
   if (name && name !== t.name) {
     commitTask(() => { t.name = name; });
-    renderBoardCard(activeId);
+    renderMain();
     renderPanelContent(activeId);
   } else if (!name && inp) { inp.value = t.name; autoResize(inp); }
 }
@@ -862,7 +849,7 @@ function commitNoteEdit() {
   const el = g('pNote'); if (!el) return;
   if (el.value !== (t.note || '')) {
     commitTask(() => { t.note = el.value; });
-    renderBoardCard(activeId);
+    renderMain();
   }
 }
 
@@ -880,9 +867,9 @@ function commitBrick(id) {
 
 // ─── DONE MODAL ──────────────────────────────────────────────────────────────
 
-function openDoneModal(zone) {
-  doneModalZone = zone || 'all';
+function openDoneModal() {
   const done = tasks.filter(t => t.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0)); if (!done.length) return;
+  doneModalOpen = true;
   const c = CONGRATS[Math.min(Math.floor(done.length / 2), CONGRATS.length - 1)];
   g('doneEmoji').textContent    = c.emoji;
   g('doneCongrats').textContent = c.h;
@@ -899,7 +886,7 @@ function openDoneModal(zone) {
 }
 
 function reopenFromDone(id) { toggleDone(id); closeDoneModal(); }
-function closeDoneModal()   { closeModal('doneModalOverlay'); doneModalZone = null; }
+function closeDoneModal()   { closeModal('doneModalOverlay'); doneModalOpen = false; }
 function maybeDoneClose(e)  { if (e.target === g('doneModalOverlay')) closeDoneModal(); }
 
 // ─── TROPHY ──────────────────────────────────────────────────────────────────
@@ -1478,7 +1465,6 @@ function _doSearch() {
 }
 
 // ─── NAVIGATION ──────────────────────────────────────────────────────────────
-// (scroll navigation removed — board is now a slide-in panel)
 
 document.addEventListener('keydown', e => {
   const inInput=['INPUT','TEXTAREA'].includes(document.activeElement.tagName);
@@ -1490,11 +1476,11 @@ document.addEventListener('keydown', e => {
     quickInput.blur(); return;
   }
   if (inInput) return;
-  if ((e.key==='n'||e.key==='N')&&!activeId&&!doneModalZone&&!trophyTaskId) {
+  if ((e.key==='n'||e.key==='N')&&!activeId&&!doneModalOpen&&!trophyTaskId) {
     e.preventDefault();
     openCapture();
   }
-  if (e.key==='/'&&!activeId&&!doneModalZone&&!trophyTaskId&&!searchActive) { e.preventDefault(); openSearch(); }
+  if (e.key==='/'&&!activeId&&!doneModalOpen&&!trophyTaskId&&!searchActive) { e.preventDefault(); openSearch(); }
 });
 
 // ─── STATIC EVENT LISTENERS ──────────────────────────────────────────────────

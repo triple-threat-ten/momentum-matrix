@@ -63,7 +63,7 @@ function save() {
     const payload = JSON.stringify(tasks.map(serializeTask));
     // Warn if approaching the typical 5MB localStorage limit (~4.5MB threshold)
     if ((payload.length + JSON.stringify(inbox).length) > 4_500_000) {
-      showStorageToast('⚠ Board is very large — consider exporting a backup.');
+      showStorageToast('⚠ Your data is getting very large — consider exporting a backup.');
     }
     localStorage.setItem(STORAGE_KEY, payload);
     localStorage.setItem(INBOX_KEY, JSON.stringify(inbox));
@@ -97,7 +97,7 @@ function exportData() {
     [JSON.stringify({ version:1, exportedAt:new Date().toISOString(), tasks:tasks.map(serializeTask), inbox }, null, 2)],
     { type:'application/json' }
   ));
-  Object.assign(document.createElement('a'), { href:url, download:`momentum-matrix-${new Date().toISOString().slice(0,10)}.json` }).click();
+  Object.assign(document.createElement('a'), { href:url, download:`halo-${new Date().toISOString().slice(0,10)}.json` }).click();
   URL.revokeObjectURL(url);
 }
 
@@ -107,18 +107,18 @@ function importData(event) {
   reader.onload = e => {
     try {
       const payload = JSON.parse(e.target.result);
-      if (payload.version && payload.version > 1) { alert('This export was created by a newer version of Momentum Matrix. Please update the app before importing.'); return; }
+      if (payload.version && payload.version > 1) { alert('This export was created by a newer version of HALO°. Please update the app before importing.'); return; }
       const importedTasks = Array.isArray(payload) ? payload : (payload.tasks || []);
       const importedInbox = Array.isArray(payload) ? []      : (payload.inbox  || []);
       if (!importedTasks.length && !importedInbox.length) { alert('Nothing to import — file appears empty or unrecognised.'); return; }
-      const msg = `Import ${importedTasks.length} task(s) and ${importedInbox.length} inbox item(s)? This will replace your current board.`;
+      const msg = `Import ${importedTasks.length} task(s) and ${importedInbox.length} inbox item(s)? This will replace your current tasks.`;
       mmConfirm(msg, () => {
         tasks = importedTasks.map(migrateTask);
         inbox = importedInbox; activeId = null;
         rebuildTaskMap();
         save(); render(); renderInbox();
       });
-    } catch(err) { alert('Could not read file. Make sure it is a valid Momentum Matrix export.'); }
+    } catch(err) { alert('Could not read file. Make sure it is a valid HALO° export.'); }
     event.target.value = '';
   };
   reader.readAsText(file);

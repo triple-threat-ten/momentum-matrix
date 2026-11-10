@@ -1,7 +1,7 @@
 {
-  "name": "Momentum Matrix",
-  "short_name": "MM",
-  "description": "Smart task manager — capture, triage, act.",
+  "name": "HALO°",
+  "short_name": "HALO°",
+  "description": "Tell HALO° how much energy you have; it shows you what to do next.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
