@@ -210,3 +210,16 @@ const EMPTY_NONE       = 'Nothing here yet.';
 const EMPTY_ADD        = 'Add what matters →';
 const EMPTY_ALL_DRIFT  = (n) => `Your list is clear. ${n} task${n !== 1 ? 's are' : ' is'} drifting —`;
 const EMPTY_REVIEW     = 'Review →';
+
+// ─── Drift box (spec §5.3, §7) ───────────────────────────────────────────────
+const DB_QUESTION   = 'How urgent is it now?';
+const DB_DONE       = '✓ Done';
+const DB_LET_GO     = 'Let it go';
+const DB_COMING_UP  = 'Coming up';
+const DB_SEE_ALL    = (n) => `See all ${n}`;
+const DB_SEE_LESS   = 'Hide list';
+const DB_PROGRESS   = (pos, total) => `${pos} of ${total}`;
+const DB_END_TITLE  = 'All caught up.';
+const DB_END_SUB    = 'Every rating matches reality.';
+const DB_CLOSE      = 'Close';
+const UNDO_LET_GO   = (name) => `Let go of "${name.length > 40 ? name.slice(0, 38) + '…' : name}"`;

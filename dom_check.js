@@ -143,6 +143,8 @@ const REMOVED_IDS = [
   'mvFlowConfirm', 'mvDeepConfirm', 'mvDriftConfirm', 'btnDragApply', 'btnDragCancel',
   'fireOverlay', 'fireModalList', 'btnFireClose', 'stuckOverlay', 'stuckModalList', 'btnStuckClose',
   'parkedOverlay', 'parkedList', 'btnParkedClose',
+  // v26 session ③ — old Drift box list modal
+  'driftBoxModal', 'driftBoxList', 'driftBoxEmpty',
 ];
 const zombies = REMOVED_IDS.filter(id => {
   const re = new RegExp(`g\\('${id}'\\)|getElementById\\('${id}'\\)`);

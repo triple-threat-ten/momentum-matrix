@@ -61,6 +61,13 @@ function sortByMode(tasks, mode, now = Date.now()) {
   });
 }
 
+// Fields to apply when the Urgency rating is saved — in the panel, triage or the Drift box (§4.5).
+// Any save restarts the urgency clock, even with the same value ("still accurate").
+function rerateUrgency(t, u, now = Date.now()) {
+  const sc = calcScore(t.i, u, t.s);
+  return { u, sc, tier: getTier(sc), urgencySetAt: now };
+}
+
 // Drift box review order (§5.3): slipping tasks (most overdue first), then drifted-away
 // tasks (highest Matter first). `exclude` = ids already reviewed this session.
 function driftQueue(tasks, now = Date.now(), exclude) {

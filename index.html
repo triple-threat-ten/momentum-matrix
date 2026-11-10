@@ -117,23 +117,25 @@
     </div>
   </div>
 
-  <div class="drift-box-overlay hidden" id="driftBoxOverlay">
-    <div class="drift-box-modal" id="driftBoxModal">
-      <div class="drift-box-header">
+  <!-- DRIFT BOX — right-side panel (bottom sheet on mobile) -->
+  <div class="db-overlay hidden" id="driftBoxOverlay">
+    <aside class="db-panel" id="driftBoxPanel" role="dialog" aria-modal="true" aria-labelledby="dbTitle">
+      <div class="db-head">
         <div>
-          <div class="drift-box-label">// urgency review</div>
-          <div class="drift-box-title">Tasks that may be mis-rated</div>
+          <h2 class="db-title" id="dbTitle">Drift box</h2>
+          <p class="db-sub">Tasks drifting away from you. One question each: catch them back, or let them go.</p>
         </div>
-        <button class="drift-box-close" id="btnDriftBoxClose">×</button>
+        <button class="db-close" id="btnDriftBoxClose" aria-label="Close the Drift box">×</button>
       </div>
-      <div class="drift-box-sub">These tasks have sat longer than their urgency implies. Is the rating still accurate?</div>
-      <div class="drift-box-list" id="driftBoxList"></div>
-      <div class="drift-box-empty hidden" id="driftBoxEmpty">
-        <span>No urgency drift detected — ratings look accurate.</span>
-      </div>
-    </div>
+      <div class="db-body" id="driftBoxBody"></div>
+    </aside>
   </div>
 
+  <!-- Undo toast (Let it go) -->
+  <div class="undo-toast hidden" id="undoToast" role="status" aria-live="polite">
+    <span id="undoToastText"></span>
+    <button class="undo-btn" id="btnUndo">Undo</button>
+  </div>
 
 <!-- SEARCH OVERLAY -->
 <div class="search-overlay" id="searchOverlay">

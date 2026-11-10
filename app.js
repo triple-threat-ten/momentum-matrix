@@ -1361,30 +1361,14 @@ function reopenFromTrophy() {
   closeTrophy(); closeDoneModal(); render();
 }
 
-// ─── HYGIENE MODALS ──────────────────────────────────────────────────────────
+// ─── DRIFT BOX (spec §5.3) ───────────────────────────────────────────────────
+// One card at a time: "How urgent is it now?" — one tap re-rates and moves on.
 
-function renderModalList(listId, emptyId, items, rowFn) {
-  const listEl = g(listId), emptyEl = g(emptyId);
-  listEl.innerHTML = '';
-  if (!items.length) { listEl.classList.add('hidden'); emptyEl.classList.remove('hidden'); }
-  else { listEl.classList.remove('hidden'); emptyEl.classList.add('hidden'); items.forEach(t => listEl.appendChild(rowFn(t))); }
-}
-
-function dbRow(cls, t, dotColor, meta, age, btnClass, btnLabel, btnAction) {
-  const row = document.createElement('div'); row.className = cls;
-  row.innerHTML = `
-    <div class="db-tier-dot" style="background:${dotColor}"></div>
-    <div class="db-task-body">
-      <div class="db-task-name">${esc(t.name)}</div>
-      <div class="db-task-meta">${meta}</div>
-      <div class="db-task-age">${age}</div>
-    </div>
-    <button class="${btnClass}" data-action="${btnAction}" data-id="${t.id}">${btnLabel}</button>`;
-  return row;
-}
-
-// Drift Box (interim list view — replaced by the one-card Drift box in session ③)
-function getDriftBoxTasks() { return driftQueue(tasks); }
+let dbQueue    = [];          // task ids in review order, frozen when the box opens
+let dbHandled  = new Set();   // ids answered while the box is open
+let dbSeeAll   = false;       // mobile: "See all N" list expanded
+let dbOpener   = null;        // element to give focus back to on close
+const dbReviewed = new Set(); // reviewed this session — not shown again until the app is reopened
 
 function driftBoxCounts() {
   const active = tasks.filter(t => !t.done);
@@ -1400,21 +1384,145 @@ function updateDriftBoxBadge() {
   const btn = g('btnDriftBox'); if (btn) btn.classList.toggle('is-empty', slipping + drifted === 0);
 }
 
-function openDriftBox() {
-  renderModalList('driftBoxList', 'driftBoxEmpty', getDriftBoxTasks(), t => {
-    const r = slipRatio(t), lbl = URG_WORDS[t.u];
-    const reason = isDrifted(t) ? REASON_DRIFTED : urgencyAgeLabel(t);
-    const row = dbRow('db-task-row', t, TIER_HEX[t.tier.key]||'var(--muted)',
-      `Rated ${lbl} · score ${t.sc}`, reason, 'db-reassess', 'Re-rate ↓', 'drift-box-reassess');
-    row.querySelector('.db-task-age').classList.toggle('age-warn', !isDrifted(t) && r < 2);
-    return row;
-  });
+const driftBoxIsOpen = () => !g('driftBoxOverlay').classList.contains('hidden');
+
+// focusId: open on that task first (used by a Slipping badge)
+function openDriftBox(focusId) {
+  dbOpener = document.activeElement;
+  dbQueue  = driftQueue(tasks, Date.now(), dbReviewed).map(t => t.id);
+  if (focusId && dbQueue.includes(focusId)) dbQueue = [focusId, ...dbQueue.filter(id => id !== focusId)];
+  dbHandled = new Set(); dbSeeAll = false;
+  renderDriftBox();
   openModal('driftBoxOverlay');
+  requestAnimationFrame(() => g('driftBoxOverlay').classList.add('is-open'));
+  dbFocusCard();
 }
 
-function closeDriftBox()       { closeModal('driftBoxOverlay'); }
+function closeDriftBox() {
+  if (!driftBoxIsOpen()) return;
+  g('driftBoxOverlay').classList.remove('is-open');
+  closeModal('driftBoxOverlay');
+  if (dbOpener && document.contains(dbOpener)) dbOpener.focus();
+}
 function maybeCloseDriftBox(e) { if (e.target === g('driftBoxOverlay')) closeDriftBox(); }
-function driftBoxReassess(id)  { closeDriftBox(); openPanel(id); setTimeout(driftAction, 120); }
+
+// Tasks still waiting for an answer (skips anything completed or deleted elsewhere)
+function dbPending() { return dbQueue.filter(id => !dbHandled.has(id) && byId(id) && !byId(id).done); }
+
+function dbFocusCard() {
+  setTimeout(() => {
+    const body = g('driftBoxBody');
+    const b = body.querySelector('.db-card .db-urg.is-current') || body.querySelector('.db-card .db-urg, .db-end-close');
+    if (b) b.focus();
+  }, 40);
+}
+
+function dbReasonHtml(t) {
+  if (isDrifted(t)) return `<span class="db-reason db-reason-drifted">${REASON_DRIFTED}</span>`;
+  const lvl = slipLevel(t) || 'amber';
+  return `<span class="db-reason slip-${lvl}">${esc(urgencyAgeLabel(t) || '')}</span>`;
+}
+
+function dbUrgButtonsHtml(t, cls) {
+  return [1, 2, 3, 4].map(u => `<button class="${cls}${t.u === u ? ' is-current' : ''}" data-action="db-rate" data-id="${t.id}" data-u="${u}"
+    aria-pressed="${t.u === u}"${cls === 'db-mini' ? ` aria-label="${URG_WORDS[u]} — ${esc(t.name)}"` : ''}>${URG_WORDS[u]}</button>`).join('');
+}
+
+function renderDriftBox() {
+  const body = g('driftBoxBody'); if (!body) return;
+  const pending = dbPending();
+  if (!pending.length) {
+    body.innerHTML = `<div class="db-end">
+      <div class="db-end-mark" aria-hidden="true">✓</div>
+      <div class="db-end-title">${DB_END_TITLE}</div>
+      <div class="db-end-sub">${DB_END_SUB}</div>
+      <button class="db-end-close" data-action="db-close">${DB_CLOSE}</button>
+    </div>`;
+    return;
+  }
+  const total = dbQueue.length, pos = total - pending.length + 1;
+  const t = byId(pending[0]), rest = pending.slice(1).map(byId);
+  body.innerHTML = `
+    <div class="db-progress" aria-label="${DB_PROGRESS(pos, total)}">
+      <div class="db-progress-bar"><i style="width:${((pos - 1) / total * 100).toFixed(1)}%"></i></div>
+      <span class="db-progress-text">${DB_PROGRESS(pos, total)}</span>
+    </div>
+    <article class="db-card" data-task-id="${t.id}">
+      <h3 class="db-card-title">${esc(t.name)}</h3>
+      ${dbReasonHtml(t)}
+      <div class="db-question" id="dbQuestion">${DB_QUESTION}</div>
+      <div class="db-urgs" role="group" aria-labelledby="dbQuestion">${dbUrgButtonsHtml(t, 'db-urg')}</div>
+      <div class="db-secondary">
+        <button class="db-link db-link-done" data-action="db-done" data-id="${t.id}">${DB_DONE}</button>
+        <span class="db-sep" aria-hidden="true">·</span>
+        <button class="db-link db-link-letgo" data-action="db-letgo" data-id="${t.id}">${DB_LET_GO}</button>
+      </div>
+    </article>
+    ${rest.length ? `
+    <button class="db-seeall" data-action="db-seeall" aria-expanded="${dbSeeAll}">${dbSeeAll ? DB_SEE_LESS : DB_SEE_ALL(rest.length)}</button>
+    <section class="db-upnext${dbSeeAll ? ' is-open' : ''}" aria-label="${DB_COMING_UP}">
+      <div class="db-upnext-title">${DB_COMING_UP} · ${rest.length}</div>
+      ${rest.map(r => `<div class="db-row" data-task-id="${r.id}">
+        <div class="db-row-text"><span class="db-row-name">${esc(r.name)}</span>
+          <span class="db-row-reason">${isDrifted(r) ? REASON_DRIFTED : esc(urgencyAgeLabel(r) || '')}</span></div>
+        <div class="db-row-urgs" role="group" aria-label="${DB_QUESTION}">${dbUrgButtonsHtml(r, 'db-mini')}</div>
+      </div>`).join('')}
+    </section>` : ''}`;
+}
+
+function dbAfterAnswer(id) {
+  dbHandled.add(id); dbReviewed.add(id);
+  render();             // list, header counts, background screen
+  renderDriftBox();
+  dbFocusCard();
+}
+
+// Saving any urgency — even the same value — restarts its clock (§4.5)
+function dbRate(id, u) {
+  const t = byId(id); if (!t) return;
+  commitTask(() => {
+    Object.assign(t, rerateUrgency(t, u));
+    if (!t.edits) t.edits = []; t.edits.push(Date.now());
+  });
+  dbAfterAnswer(id);
+}
+
+function dbDone(id) {
+  const t = byId(id); if (!t) return;
+  commitTask(() => { t.done = true; t.doneAt = Date.now(); });
+  if (timerTaskId === id) timerStopSilent();
+  dbAfterAnswer(id);
+}
+
+// "Let it go" deletes straight away, with a 5-second Undo (§9)
+function dbLetGo(id) {
+  const idx = tasks.findIndex(t => t.id === id); if (idx < 0) return;
+  const snapshot = JSON.parse(JSON.stringify(tasks[idx]));
+  if (timerTaskId === id) timerStopSilent();
+  commitTask(() => { tasks.splice(idx, 1); });
+  if (activeId === id) closePanel();
+  dbAfterAnswer(id);
+  showUndoToast(UNDO_LET_GO(snapshot.name), () => {
+    const restored = migrateTask(snapshot);
+    commitTask(() => { tasks.splice(Math.min(idx, tasks.length), 0, restored); });
+    dbHandled.delete(id); dbReviewed.delete(id);
+    render();
+    if (driftBoxIsOpen()) { renderDriftBox(); dbFocusCard(); }
+  });
+}
+
+// ─── UNDO TOAST ──────────────────────────────────────────────────────────────
+
+let undoFn = null, undoTimer = null;
+function showUndoToast(text, onUndo) {
+  undoFn = onUndo;
+  g('undoToastText').textContent = text;
+  g('undoToast').classList.remove('hidden');
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(hideUndoToast, 5000);
+}
+function hideUndoToast() { clearTimeout(undoTimer); undoFn = null; g('undoToast').classList.add('hidden'); }
+function runUndo()       { const fn = undoFn; hideUndoToast(); if (fn) fn(); }
 
 // ─── RENDER ──────────────────────────────────────────────────────────────────
 
@@ -1456,7 +1564,7 @@ function slipLevel(t) {
 
 function slipBadgeHtml(t) {
   const lvl = slipLevel(t); if (!lvl) return '';
-  return `<button class="slip-badge slip-${lvl}" data-action="open-drift-box" title="${esc(SLIP_BADGE_TITLE)}">${esc(urgencyAgeLabel(t))}</button>`;
+  return `<button class="slip-badge slip-${lvl}" data-action="open-drift-box" data-focus="${t.id}" title="${esc(SLIP_BADGE_TITLE)}">${esc(urgencyAgeLabel(t))}</button>`;
 }
 
 function deepBadgeHtml(t)   { return isDeep(t) ? `<span class="deep-badge">${DEEP_BADGE}</span>` : ''; }
@@ -1664,11 +1772,15 @@ document.addEventListener('click', e => {
     case 'hero-start':       e.stopPropagation(); heroShowPicker(id);       break;
     case 'hero-pick-dur':    e.stopPropagation(); heroPickDuration(parseInt(el.dataset.mins)); break;
     case 'hero-pick-cancel': e.stopPropagation(); heroHidePicker();         break;
-    case 'open-drift-box':   e.stopPropagation(); openDriftBox();           break;
+    case 'open-drift-box':   e.stopPropagation(); openDriftBox(el.dataset.focus ? Number(el.dataset.focus) : null); break;
+    case 'db-rate':          dbRate(id, +el.dataset.u);                     break;
+    case 'db-done':          dbDone(id);                                    break;
+    case 'db-letgo':         dbLetGo(id);                                   break;
+    case 'db-seeall':        dbSeeAll = !dbSeeAll; renderDriftBox();        break;
+    case 'db-close':         closeDriftBox();                               break;
     case 'open-capture':     openCapture();                                 break;
     case 'open-done':        openDoneModal();                               break;
     case 'timer-stop':       timerStop(false);                              break;
-    case 'drift-box-reassess': driftBoxReassess(id);                        break;
     case 'open-link-search':   openLinkSearch(id);                          break;
     case 'ls-select':          selectLinkResult(+el.dataset.idx);           break;
     case 'remove-pending-link': pendingCreateLinks.splice(+el.dataset.idx, 1); renderPanelLinks(null); break;
@@ -1753,6 +1865,7 @@ document.addEventListener('keydown', e => {
   if (e.key==='Escape') {
     // Overlay-level Escape is handled by capture-phase listeners on each overlay.
     // This fallback covers non-overlay layers only.
+    if (driftBoxIsOpen()) { closeDriftBox(); return; }
     if (captureOpen) { closeCapture(); return; }
     quickInput.blur(); return;
   }
@@ -1786,7 +1899,7 @@ g('btnReset').addEventListener('click', () => { mmConfirm(RESET_CONFIRM, clearSa
 g('importInput').addEventListener('change', importData);
 
 // Header entries: Drift box · Inbox · + Add
-g('btnDriftBox').addEventListener('click', openDriftBox);
+g('btnDriftBox').addEventListener('click', () => openDriftBox());
 g('btnInbox').addEventListener('click', openTriage);
 g('btnAdd').addEventListener('click', () => captureOpen ? closeCapture() : openCapture());
 
@@ -1798,9 +1911,10 @@ document.addEventListener('keydown', e => {
   e.preventDefault(); row.click();
 });
 
-// Drift box modal
+// Drift box panel + undo toast
 g('driftBoxOverlay').addEventListener('click', maybeCloseDriftBox);
 g('btnDriftBoxClose').addEventListener('click', closeDriftBox);
+g('btnUndo').addEventListener('click', runUndo);
 
 // Create panel
 g('btnPanelCreate').addEventListener('click', addTaskFromPanel);

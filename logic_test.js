@@ -11,7 +11,7 @@ const stubs = `
 const URG_WORDS = ['', 'Someday', 'Later', 'Soon', 'Now'];
 `;
 
-const L   = new Function(stubs + src + '\nreturn { calcScore, getTier, urgencyAgeLabel, lastTouchedTs, fmtDuration, fmtAgo, isDeep, isDrifted, slipRatio, sortByMode, driftQueue, MODES, TIERS, DAY_MS, URG_HORIZON };')();
+const L   = new Function(stubs + src + '\nreturn { calcScore, getTier, urgencyAgeLabel, lastTouchedTs, fmtDuration, fmtAgo, isDeep, isDrifted, slipRatio, sortByMode, driftQueue, rerateUrgency, MODES, TIERS, DAY_MS, URG_HORIZON };')();
 
 // storage.js loaded alongside logic.js (it needs calcScore / getTier). Only pure helpers are exercised.
 const S   = new Function(stubs + src + '\n' + storageSrc + '\nreturn { migrateTask, serializeTask, DROPPED_FIELDS };')();
@@ -162,6 +162,26 @@ assert('excludes ids reviewed this session',        eq(ids(L.driftQueue(dq, now,
 assert('accepts a Set for exclude',                 eq(ids(L.driftQueue(dq, now, new Set([21]))), [23,25,22]));
 assert('ratio exactly 1 is not slipping',           L.driftQueue([makeTask({ id:31, u:3, urgencySetAt: ago(4) })], now).length === 0);
 assert('empty input → empty queue',                 eq(L.driftQueue([], now), []));
+
+// ─── rerateUrgency ───────────────────────────────────────────────────────────
+console.log('\nrerateUrgency');
+const rr = L.rerateUrgency(makeTask({ i:3, u:4, s:2, urgencySetAt: ago(9) }), 1, now);
+assert('sets the new urgency',                rr.u === 1);
+assert('recomputes the Matter score',         rr.sc === L.calcScore(3, 1, 2));
+assert('recomputes the tier',                 rr.tier.key === L.getTier(rr.sc).key);
+assert('restarts the urgency clock',          rr.urgencySetAt === now);
+assert('same value still restarts the clock (still accurate)', (() => {
+  const t = makeTask({ u:3, urgencySetAt: ago(10) });
+  Object.assign(t, L.rerateUrgency(t, 3, now));
+  return t.urgencySetAt === now && L.slipRatio(t, now) === 0;
+})());
+assert('Someday → drifted; Soon again → back in the list', (() => {
+  const t = makeTask({ u:3, urgencySetAt: ago(10) });
+  Object.assign(t, L.rerateUrgency(t, 1, now)); const drifted = L.isDrifted(t);
+  Object.assign(t, L.rerateUrgency(t, 3, now));
+  return drifted && !L.isDrifted(t);
+})());
+assert('does not mutate the task',            (() => { const t = makeTask({ u:2 }); L.rerateUrgency(t, 4, now); return t.u === 2; })());
 
 // ─── urgencyAgeLabel (badge / reason chip, §4.5) ────────────────────────────
 console.log('\nurgencyAgeLabel');
