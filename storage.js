@@ -3,6 +3,9 @@
 const STORAGE_KEY = 'mm_tasks_v1';
 const INBOX_KEY   = 'mm_inbox_v1';
 
+// v26: fields dropped from the data model (spec §8). Ignored on load, never written back.
+const DROPPED_FIELDS = ['agency', 'context', 'links', 'urgencyAckedAt'];
+
 // ─── STORAGE TOAST ───────────────────────────────────────────────────────────
 
 let _toastTimer = null;
@@ -33,19 +36,31 @@ function migrateTask(t) {
   if (t.doneAt   == null)  t.doneAt    = null;
   if (!t.views)            t.views     = [];
   if (!t.edits)            t.edits     = [];
-  if (!t.agency)           t.agency    = 'solo';
-  if (t.context  == null)  t.context   = '';
   if (t.note     == null)  t.note      = '';
-  if (!t.links)            t.links     = [];
   if (!t.planned)          t.planned   = [];
+  // v26: urgency clock. We can't tell which past edits changed Urgency,
+  // so the most recent of createdAt and any edit is used (spec §8).
+  if (!t.urgencySetAt) {
+    const edits = t.edits.filter(Number.isFinite);
+    t.urgencySetAt = Math.max(t.createdAt, ...edits);
+  }
+  DROPPED_FIELDS.forEach(k => { delete t[k]; });
   return t;
+}
+
+// Copy of a task as it should be persisted — never carries dropped fields,
+// even if app.js still sets them in memory during the v26 transition.
+function serializeTask(t) {
+  const out = { ...t };
+  DROPPED_FIELDS.forEach(k => { delete out[k]; });
+  return out;
 }
 
 // ─── PERSISTENCE ─────────────────────────────────────────────────────────────
 
 function save() {
   try {
-    const payload = JSON.stringify(tasks);
+    const payload = JSON.stringify(tasks.map(serializeTask));
     // Warn if approaching the typical 5MB localStorage limit (~4.5MB threshold)
     if ((payload.length + JSON.stringify(inbox).length) > 4_500_000) {
       showStorageToast('⚠ Board is very large — consider exporting a backup.');
@@ -79,7 +94,7 @@ function clearSave() {
 
 function exportData() {
   const url = URL.createObjectURL(new Blob(
-    [JSON.stringify({ version:1, exportedAt:new Date().toISOString(), tasks, inbox }, null, 2)],
+    [JSON.stringify({ version:1, exportedAt:new Date().toISOString(), tasks:tasks.map(serializeTask), inbox }, null, 2)],
     { type:'application/json' }
   ));
   Object.assign(document.createElement('a'), { href:url, download:`momentum-matrix-${new Date().toISOString().slice(0,10)}.json` }).click();

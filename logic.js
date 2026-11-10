@@ -8,16 +8,77 @@ const TIERS = [
   { key:'someday',  min:0  },
 ];
 
-const URG_HORIZON         = [0, 0, 14, 4, 1]; // days; indices 0-1 unused
-const DRIFT_BOX_THRESHOLD = { 2:14, 3:45 };    // days by urgency level
+const URG_HORIZON         = [0, 0, 14, 4, 1]; // days an urgency rating stays valid: Later 14 · Soon 4 · Now 1 (Someday none)
+const DRIFT_BOX_THRESHOLD = { 2:14, 3:45 };    // @deprecated v26 — old Drift Box modal; remove with app.js rewrite
 const DAY_MS              = 86400000;
-const PARKED_STALE_MS     = 30 * DAY_MS;
+const PARKED_STALE_MS     = 30 * DAY_MS;       // @deprecated v26 — old Parked review modal
 const SESSION_CAP         = 5;
+
+// Focus modes (spec §4.3). 'balanced' is the default and is never persisted.
+const MODES = ['balanced', 'quick', 'zone', 'focus'];
 
 // Matter score: (I×U) + (S×√(I×U)) normalised to 0–100. Max raw = 32.
 function calcScore(i, u, s) { return Math.round(((i*u) + (s*Math.sqrt(i*u))) / 32 * 100); }
 function getTier(sc)        { return TIERS.find(t => sc >= t.min); }
 
+// ─── v26 CONTEXTS MODEL ──────────────────────────────────────────────────────
+
+// Deep = important and hard to start. Visual highlight only, not a zone (§3, §4.6).
+function isDeep(t) { return t.i >= 3 && t.s <= 2; }
+
+// Drifted away = rated Someday. Lives in the Drift box, never in the list (§4.2).
+function isDrifted(t) { return !t.done && t.u === 1; }
+
+// How far past its horizon an urgency rating is: (now − urgencySetAt) / horizon.
+// > 1 = slipping (amber), ≥ 2 = red. null when no horizon applies (done, Someday, invalid u).
+// Falls back to createdAt for tasks that have not been migrated yet.
+function slipRatio(t, now = Date.now()) {
+  if (!t || t.done) return null;
+  const horizon = URG_HORIZON[t.u];
+  if (!horizon) return null;
+  const since = t.urgencySetAt ?? t.createdAt;
+  if (since == null) return null;
+  return Math.max(0, (now - since) / DAY_MS / horizon);
+}
+
+// Returns a NEW array ranked for the given mode (§4.3). Does not filter — callers
+// decide which tasks belong in the list (not done, not drifted). Unknown mode → Balanced.
+//   balanced: Matter ↓
+//   quick:    Simplicity ↓ · Matter ↓
+//   zone:     Urgency ↓ · Slip ratio ↓ (most overdue first) · Matter ↓
+//   focus:    Importance ↓ · Matter ↓
+// Full ties keep input order (Array.prototype.sort is stable).
+function sortByMode(tasks, mode, now = Date.now()) {
+  const matter = t => t.sc;
+  const keys = {
+    quick: [t => t.s, matter],
+    zone:  [t => t.u, t => slipRatio(t, now), matter],
+    focus: [t => t.i, matter],
+  }[mode] || [matter];
+  return [...tasks].sort((a, b) => {
+    for (const k of keys) {
+      const va = k(a) ?? -Infinity, vb = k(b) ?? -Infinity;
+      if (va !== vb) return vb - va;
+    }
+    return 0;
+  });
+}
+
+// Drift box review order (§5.3): slipping tasks (most overdue first), then drifted-away
+// tasks (highest Matter first). `exclude` = ids already reviewed this session.
+function driftQueue(tasks, now = Date.now(), exclude) {
+  const skip = new Set(exclude || []);
+  const pool = tasks.filter(t => !t.done && !skip.has(t.id));
+  const slipping = pool
+    .filter(t => !isDrifted(t) && (slipRatio(t, now) ?? 0) > 1)
+    .sort((a, b) => slipRatio(b, now) - slipRatio(a, now));
+  const drifted = pool.filter(isDrifted).sort((a, b) => b.sc - a.sc);
+  return [...slipping, ...drifted];
+}
+
+// ─── DEPRECATED (v26) — still used by app.js until session ②, then removed ──
+
+/** @deprecated v26 — zones replaced by modes. Use isDeep / isDrifted. */
 function zoneFor(t) {
   if (t.sc < 20)             return 'drift';
   if (t.i >= 3 && t.s <= 2) return 'deep';
@@ -30,6 +91,7 @@ function sizeClass(sc) {
   return 'sz-xs';
 }
 
+/** @deprecated v26 — zones replaced by modes. Use sortByMode / driftQueue. */
 function buildZones(tasks) {
   const z = { flow:[], deep:[], drift:[] };
   tasks.forEach(t => z[zoneFor(t)].push(t));
@@ -57,7 +119,7 @@ function fmtAgo(ts) {
   return ms < 60000 ? 'just now' : fmtDuration(ms) + ' ago';
 }
 
-// Returns age/horizon ratio (>1 = overdue) or null if not applicable.
+/** @deprecated v26 — replaced by slipRatio (uses urgencySetAt, no 24h acknowledgment). */
 function urgencyAgeFrac(t) {
   if (t.done || !t.u || t.u <= 1) return null;
   if (t.urgencyAckedAt && Date.now() - t.urgencyAckedAt < DAY_MS) return null;
@@ -73,6 +135,7 @@ function urgencyAgeLabel(t) {
   return `${Math.floor(over/7)}w past ${lbl}`;
 }
 
+/** @deprecated v26 — Halo block / peek drawer removed. Ranking now comes from sortByMode. */
 function suggestTask(tasks, blockType, exclude) {
   const skip   = new Set(exclude || []);
   const active = tasks.filter(t => !t.done && t.agency !== 'waiting' && zoneFor(t) !== 'drift' && !skip.has(t.id));
@@ -90,6 +153,7 @@ function suggestTask(tasks, blockType, exclude) {
   return { task:pool[0], reason:reason(pool[0], blockType === 'deep' ? 'Deep' : 'Flow') };
 }
 
+/** @deprecated v26 — drag & drop between zones removed. */
 function resolveDrop(task, targetZone) {
   const cur = zoneFor(task); if (cur === targetZone) return null;
   if (cur === 'flow' && targetZone === 'deep') {
