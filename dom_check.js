@@ -74,9 +74,7 @@ const KNOWN_FALSE_POSITIVES = new Set([
   // IDs that are injected dynamically into innerHTML, not static in HTML
   'brickCtaCard', 'brickLinkCta', 'brickInp', 'btnBrickSave', 'btnBrickCancel',
   'btnApplyScore', 'pBrickDetailDel', 'pBrickDetailText', 'pBrickDetailTs',
-  'btnDriftKeep', 'btnDriftAction', 'pAvoidanceText',
   // IDs inside dynamically rendered modal content
-  'ltcFromName', 'ltcToName', 'mergeKeepName', 'mergeAbsorbName',
   // "Next step" input injected by renderPlanned() (v25.6)
   'stepLinkCta', 'stepInputRow', 'stepInp', 'btnStepSave', 'btnStepCancel',
 ]);
@@ -145,6 +143,12 @@ const REMOVED_IDS = [
   'parkedOverlay', 'parkedList', 'btnParkedClose',
   // v26 session ③ — old Drift box list modal
   'driftBoxModal', 'driftBoxList', 'driftBoxEmpty',
+  // v26 session ④ — agency, context, dependencies/links, merge, panel drift prompt
+  'panelDriftPrompt', 'panelDriftText', 'btnDriftKeep', 'btnDriftAction', 'pAvoidancePrompt', 'pAvoidanceText',
+  'pCtxLinks', 'pCtxLinksVal', 'pCtxAgency', 'pCtxAgencyVal', 'pTabLinks', 'pTabAgency', 'pLinkedTasks',
+  'panelContextRow', 'panelContextInput', 'linkSearchOverlay', 'linkSearchInput', 'linkSearchResults',
+  'btnLinkSearchClose', 'linkTypeChooser', 'btnLinkBefore', 'btnLinkAfter', 'btnLinkMerge', 'btnLtcCancel',
+  'mergeModalOverlay', 'btnMergeClose', 'btnMergeConfirm', 'mergeResultName', 'mergeResultNote', 'mImp', 'mUrg', 'mSim',
 ];
 const zombies = REMOVED_IDS.filter(id => {
   const re = new RegExp(`g\\('${id}'\\)|getElementById\\('${id}'\\)`);

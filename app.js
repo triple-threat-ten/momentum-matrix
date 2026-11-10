@@ -140,23 +140,6 @@ function paintSliders(cfg, i, u, s) {
   });
 }
 
-// ─── AGENCY ──────────────────────────────────────────────────────────────────
-
-function applyAgencyUI(selector, rowId, inputId, agency) {
-  document.querySelectorAll(selector).forEach(b => b.classList.toggle('active', b.dataset.agency === agency));
-  g(rowId).classList.toggle('visible', agency !== 'solo');
-  if (agency !== 'solo') setTimeout(() => g(inputId).focus(), 50);
-}
-
-function setPanelAgency(a) {
-  if (panelMode === 'create' || panelMode === 'triage') return;
-  const t = byId(activeId); if (!t) return;
-  commitTask(() => { t.agency = a; });
-  applyAgencyUI('.panel .agency-btn','panelContextRow','panelContextInput', a);
-  renderBoardCard(activeId);
-  renderPanelContent(activeId);
-}
-
 // ─── TEXTAREAS ───────────────────────────────────────────────────────────────
 
 function autoResize(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
@@ -174,13 +157,8 @@ function _panelCreateDefaults() {
   highlightTicks('eimp', 2, 'var(--fire)'); highlightTicks('eurg', 2, 'var(--activate)'); highlightTicks('esim', 3, 'var(--latent)');
   g('pScoreBar').classList.remove('visible');
   g('pFormulaHint').classList.remove('visible');
-  applyAgencyUI('.panel .agency-btn', 'panelContextRow', 'panelContextInput', 'solo');
-  g('panelContextInput').value = '';
-  g('panelDriftPrompt').className = 'panel-drift-prompt';
-  g('pCtxProgress').classList.remove('hidden');
-  g('pCtxLinks').classList.remove('hidden');
+  g('pCtxProgress').classList.add('hidden');   // no bricks before the task exists
   g('panelMenuWrap').classList.add('hidden');
-  pendingCreateLinks = [];
 }
 
 function _panelCreateResetTabs() {
@@ -241,13 +219,11 @@ function _openPanelTriageCard() {
 function addTaskFromPanel() {
   const name = (g('pNameInput').value || '').trim(); if (!name) { g('pNameInput').focus(); return; }
   const i = +g('eImp').value, u = +g('eUrg').value, s = +g('eSim').value;
-  const agency = (document.querySelector('.panel .agency-btn.active') || {}).dataset.agency || 'solo';
-  const context = (g('panelContextInput').value || '').trim();
   const note = g('pNote').value || '';
   if (panelMode === 'triage') {
     const item = panelTriageQueue[panelTriageIdx]; if (!item) return;
     commitTask(() => {
-      tasks.push(makeTask(item.id, name, i, u, s, agency, context, note, item.capturedAt));
+      tasks.push(makeTask(item.id, name, i, u, s, note, item.capturedAt));
       inbox = inbox.filter(t => t.id !== item.id);
     });
     panelTriageQueue.splice(panelTriageIdx, 1);
@@ -256,15 +232,7 @@ function addTaskFromPanel() {
     else closePanel();
   } else {
     const newId = Date.now();
-    commitTask(() => tasks.push(makeTask(newId, name, i, u, s, agency, context, note, newId)));
-    // Apply any links selected during creation
-    if (pendingCreateLinks.length) {
-      pendingCreateLinks.forEach(lnk => {
-        if (lnk.type === 'before') linkTasks(newId, lnk.targetId);
-        else                       linkTasks(lnk.targetId, newId);
-      });
-      pendingCreateLinks = [];
-    }
+    commitTask(() => tasks.push(makeTask(newId, name, i, u, s, note, newId)));
     g('quickInput').value = '';
     closePanel(); render();
   }
@@ -295,243 +263,17 @@ function panelTriageDelete() {
 
 // ─── TASK CRUD ───────────────────────────────────────────────────────────────
 
-function makeTask(id, name, i, u, s, agency, context, note, createdAt) {
+// New tasks start their urgency clock now — also when triaged from an older inbox item (§5.4)
+function makeTask(id, name, i, u, s, note, createdAt) {
   const sc = calcScore(i, u, s);
-  return { id, name, i, u, s, sc, tier:getTier(sc), done:false, bricks:[], createdAt, urgencySetAt:Date.now(), doneAt:null, views:[], edits:[], agency, context, note, links:[] };
+  return { id, name, i, u, s, sc, tier:getTier(sc), done:false, bricks:[], planned:[], createdAt, urgencySetAt:Date.now(), doneAt:null, views:[], edits:[], note };
 }
 
 function deleteTask(id) {
-  // Clean up any links pointing to this task
-  commitTask(() => {
-    tasks.forEach(other => { if (other.links) other.links = other.links.filter(l => l.targetId !== id); });
-    tasks = tasks.filter(t => t.id !== id);
-  });
+  if (timerTaskId === id) timerStopSilent();
+  commitTask(() => { tasks = tasks.filter(t => t.id !== id); });
   if (activeId === id) closePanel();
   render();
-}
-
-// ─── TASK LINKING ─────────────────────────────────────────────────────────────
-
-function linkTasks(beforeId, afterId) {
-  const before = byId(beforeId), after = byId(afterId);
-  if (!before || !after || beforeId === afterId) return;
-  if (!before.links) before.links = [];
-  if (!after.links)  after.links  = [];
-  // Guard against duplicates
-  if (before.links.some(l => l.targetId === afterId)) return;
-  commitTask(() => {
-    before.links.push({ targetId: afterId, type: 'before', createdAt: Date.now() });
-    after.links.push({ targetId: beforeId, type: 'after',  createdAt: Date.now() });
-  });
-  // Urgency mismatch check
-  if (before.u < after.u) {
-    showStorageToast(LINK_URG_MISMATCH);
-  }
-  render();
-  if (activeId === beforeId || activeId === afterId) renderPanelContent(activeId);
-}
-
-function unlinkTasks(aId, bId) {
-  const a = byId(aId), b = byId(bId);
-  commitTask(() => {
-    if (a) a.links = (a.links || []).filter(l => l.targetId !== bId);
-    if (b) b.links = (b.links || []).filter(l => l.targetId !== aId);
-  });
-  render();
-  if (activeId === aId) renderPanelContent(aId);
-}
-
-// Merge: absorb sourceId into targetId (target survives with new i/u/s)
-function mergeTasks(targetId, sourceId, newI, newU, newS) {
-  const target = byId(targetId), source = byId(sourceId);
-  if (!target || !source) return;
-  commitTask(() => {
-    // Combine bricks and edits from source
-    target.bricks = [...(target.bricks || []), ...(source.bricks || [])].sort((a,b) => a.ts - b.ts);
-    target.edits  = [...(target.edits  || []), ...(source.edits  || [])];
-    // Apply new scores
-    target.i = newI; target.u = newU; target.s = newS;
-    target.sc = calcScore(newI, newU, newS); target.tier = getTier(target.sc);
-    target.edits.push(Date.now());
-    // Repoint any links that pointed at source → target, remove the direct link between them
-    tasks.forEach(other => {
-      if (other.id === targetId || other.id === sourceId) return;
-      if (other.links) other.links = other.links.map(l => l.targetId === sourceId ? { ...l, targetId } : l);
-    });
-    // Remove the source
-    tasks = tasks.filter(t => t.id !== sourceId);
-    // Remove any self-referencing links now on target
-    target.links = (target.links || []).filter(l => l.targetId !== targetId && l.targetId !== sourceId);
-  });
-  closeMergeModal();
-  render();
-  renderPanelContent(targetId);
-}
-
-// Link search state
-let linkSearchActive = false, linkSearchResults = [], linkSearchTaskId = null;
-let pendingCreateLinks = []; // { targetId, type } — links to apply on task creation
-
-function openLinkSearch(taskId) {
-  linkSearchTaskId = taskId;
-  linkSearchActive = true;
-  const overlay = g('linkSearchOverlay');
-  overlay.classList.remove('hidden');
-  const inp = g('linkSearchInput');
-  inp.value = '';
-  renderLinkSearch('');
-  setTimeout(() => inp.focus(), 30);
-}
-
-function closeLinkSearch() {
-  linkSearchActive = false;
-  linkSearchTaskId = null;
-  linkSearchResults = [];
-  const overlay = g('linkSearchOverlay');
-  if (overlay) overlay.classList.add('hidden');
-}
-
-function renderLinkSearch(q) {
-  const el = g('linkSearchResults');
-  const isCreate = linkSearchTaskId === '__create__';
-  const cur = isCreate ? null : byId(linkSearchTaskId);
-  const linkedIds = new Set([
-    ...(cur?.links || []).map(l => l.targetId),
-    ...(isCreate ? pendingCreateLinks.map(l => l.targetId) : [])
-  ]);
-  const lower = q.toLowerCase();
-  const pool = tasks.filter(t =>
-    t.id !== linkSearchTaskId && !t.done && !linkedIds.has(t.id) &&
-    (!q || t.name.toLowerCase().includes(lower) || (t.note || '').toLowerCase().includes(lower))
-  ).sort((a, b) => b.sc - a.sc).slice(0, 8);
-  linkSearchResults = pool;
-  if (!pool.length) {
-    el.innerHTML = `<div class="ls-empty">${q ? 'No matching tasks' : 'Type to search tasks to link'}</div>`;
-    return;
-  }
-  el.innerHTML = pool.map((t, i) => {
-    const col = TIER_HEX[t.tier.key] || 'var(--muted)';
-    return `<div class="ls-result" data-action="ls-select" data-idx="${i}">
-      <span class="ls-dot" style="background:${col}"></span>
-      <span class="ls-name">${esc(t.name)}</span>
-      <span class="ls-score" style="color:${col}">${t.sc}</span>
-    </div>`;
-  }).join('');
-}
-
-function selectLinkResult(idx) {
-  const target = linkSearchResults[idx];
-  const fromId = linkSearchTaskId;
-  if (!target || !fromId) return;
-  closeLinkSearch();
-  openLinkTypeChooser(fromId, target.id);
-}
-
-let linkTypeState = null; // { fromId, toId }
-
-function openLinkTypeChooser(fromId, toId) {
-  linkTypeState = { fromId, toId };
-  // Create mode: fromId is '__create__', so we only have the target task
-  const from = fromId === '__create__' ? { name: 'new task' } : byId(fromId);
-  const to = byId(toId);
-  if (!from || !to) return;
-  const el = g('linkTypeChooser');
-  el.classList.remove('hidden');
-  const trim = (name, n=28) => name.length > n ? name.slice(0, n) + '…' : name;
-  const fromName = trim(from.name), toName = trim(to.name);
-  g('ltcFromName').textContent = fromName;
-  g('ltcToName').textContent   = toName;
-  g('ltcSubBefore').textContent = `"${fromName}" comes first — it unlocks "${toName}"`;
-  g('ltcSubAfter').textContent  = `"${toName}" must be done before "${fromName}"`;
-}
-
-function closeLinkTypeChooser() {
-  linkTypeState = null;
-  const el = g('linkTypeChooser');
-  if (el) el.classList.add('hidden');
-}
-
-function applyLinkType(type) {
-  if (!linkTypeState) return;
-  const { fromId, toId } = linkTypeState;
-
-  // Create mode: store as pending instead of calling linkTasks
-  if (fromId === '__create__') {
-    if (type === 'before') {
-      pendingCreateLinks.push({ targetId: toId, type: 'before' }); // new task → before toId
-    } else if (type === 'after') {
-      pendingCreateLinks.push({ targetId: toId, type: 'after' });  // new task → after toId
-    }
-    closeLinkTypeChooser();
-    renderPanelLinks(null);
-    return;
-  }
-
-  if (type === 'before') {
-    linkTasks(fromId, toId);
-  } else if (type === 'after') {
-    linkTasks(toId, fromId);
-  } else if (type === 'merge') {
-    closeLinkTypeChooser();
-    openMergeModal(fromId, toId);
-    return;
-  }
-  closeLinkTypeChooser();
-}
-
-// Merge modal state
-let mergeState = null;
-
-function openMergeModal(keepId, absorbId) {
-  mergeState = { keepId, absorbId };
-  const keep = byId(keepId), absorb = byId(absorbId);
-  if (!keep || !absorb) return;
-  const el = g('mergeModalOverlay');
-  el.classList.remove('hidden');
-  g('mergeKeepName').textContent   = keep.name;
-  g('mergeAbsorbName').textContent = absorb.name;
-  // Pre-fill merged name with the kept task's name
-  g('mergeResultName').value = keep.name;
-  // Combine notes for reference
-  const combinedNote = [keep.note, absorb.note].filter(Boolean).join('\n\n— absorbed note:\n');
-  g('mergeResultNote').value = combinedNote;
-  // Start sliders at keep task values
-  mergeI = keep.i; mergeU = keep.u; mergeS = keep.s;
-  paintSliders(SLIDERS_MERGE, mergeI, mergeU, mergeS);
-  g('mImp').value = mergeI; g('mUrg').value = mergeU; g('mSim').value = mergeS;
-  mergePreview();
-}
-
-function closeMergeModal() {
-  mergeState = null;
-  const el = g('mergeModalOverlay');
-  if (el) el.classList.add('hidden');
-}
-
-let mergeI = 2, mergeU = 2, mergeS = 3;
-const SLIDERS_MERGE = { impId:'mImp', urgId:'mUrg', simId:'mSim', impWord:'mImpWord', urgWord:'mUrgWord', simWord:'mSimWord', impDim:'mimp', urgDim:'murg', simDim:'msim' };
-
-function mergePreview() {
-  const i = +g('mImp').value, u = +g('mUrg').value, s = +g('mSim').value;
-  mergeI = i; mergeU = u; mergeS = s;
-  paintSliders(SLIDERS_MERGE, i, u, s);
-  const sc = calcScore(i, u, s), tier = getTier(sc);
-  g('mergeOrbScore').textContent = sc;
-  g('mergeOrbScore').style.color = TIER_HEX[tier.key] || 'var(--accent)';
-  g('mergeOrbTier').textContent  = tierUI(tier.key).label;
-  g('mergeOrbTier').style.color  = TIER_HEX[tier.key] || 'var(--accent)';
-}
-
-function confirmMerge() {
-  if (!mergeState) return;
-  const { keepId, absorbId } = mergeState;
-  const keepTask = byId(keepId);
-  if (!keepTask) return;
-  const newName = (g('mergeResultName').value || '').trim();
-  const newNote = (g('mergeResultNote').value || '').trim();
-  if (newName) keepTask.name = newName;
-  if (newNote !== keepTask.note) keepTask.note = newNote;
-  mergeTasks(keepId, absorbId, mergeI, mergeU, mergeS);
 }
 
 function toggleDone(id) {
@@ -620,7 +362,7 @@ function renderInbox() {
 
 // ─── PANEL ACCORDION ─────────────────────────────────────────────────────────
 
-const PANEL_TABS = ['score', 'progress', 'links', 'agency'];
+const PANEL_TABS = ['score', 'progress'];
 let activePanelTab = null;
 const cap = k => k.charAt(0).toUpperCase() + k.slice(1);
 
@@ -638,16 +380,12 @@ function openPanelTab(key) {
   activePanelTab = key;
   g('pTab' + cap(key)).classList.remove('hidden');
   g('pCtx' + cap(key)).setAttribute('aria-pressed', 'true');
-  if (key === 'links') renderPanelLinks(activeId);
 }
 
 function updatePanelCtxBar(t) {
   if (!t) return;
   const sv = g('pCtxScoreVal');    if (sv) sv.textContent = t.sc;
   const bv = g('pCtxProgressVal'); if (bv) bv.textContent = (t.bricks || []).length;
-  const lv = g('pCtxLinksVal');    if (lv) lv.textContent = (t.links  || []).length;
-  const av = g('pCtxAgencyVal');
-  if (av) { av.textContent = AGENCY_LABELS[t.agency || 'solo'] || 'Mine'; }
 }
 
 // ─── PANEL ───────────────────────────────────────────────────────────────────
@@ -656,7 +394,6 @@ function openPanel(id) {
   activeId = id; addingBrick = false; expandedBrickId = null;
   panelMode = 'view';
   g('pCtxProgress').classList.remove('hidden');
-  g('pCtxLinks').classList.remove('hidden');
   g('panelMenuWrap').classList.remove('hidden');
   g('panelTriageBar').classList.add('hidden');
   // Reset tab state so auto-select always opens fresh
@@ -669,9 +406,7 @@ function openPanel(id) {
   openModal('overlay'); renderPanelContent(id);
   timerSyncFooter(id);  // show running state only if THIS task is timed
   // Auto-open the most informative tab
-  const defaultTab = t && t.bricks && t.bricks.length > 0 ? 'progress'
-                   : t && t.links  && t.links.length  > 0 ? 'links'
-                   : 'score';
+  const defaultTab = t && t.bricks && t.bricks.length > 0 ? 'progress' : 'score';
   openPanelTab(defaultTab);
 }
 
@@ -679,7 +414,6 @@ function closePanel() {
   activeId = null; addingBrick = false;
   panelMode = 'view';
   g('pCtxProgress').classList.remove('hidden');
-  g('pCtxLinks').classList.remove('hidden');
   g('panelMenuWrap').classList.remove('hidden');
   g('panelTriageBar').classList.add('hidden');
   activePanelTab = null;
@@ -952,44 +686,6 @@ function renderPanelContent(id) {
   g('pNudge').textContent = tierUI(t.tier.key).nudge;
   const noteEl = g('pNote'); noteEl.value = t.note || ''; setTimeout(() => autoResize(noteEl), 0);
 
-  applyAgencyUI('.panel .agency-btn', 'panelContextRow', 'panelContextInput', t.agency || 'solo');
-  g('panelContextInput').value = t.context || '';
-
-  // Drift / avoidance prompt
-  const frac         = slipRatio(t);
-  const untouchedDays = Math.floor((Date.now() - lastTouchedTs(t)) / DAY_MS);
-  const isAvoidance  = !t.done && t.bricks.length === 0 && t.s <= 2 && untouchedDays > 7;
-  const prompt       = g('panelDriftPrompt');
-  const keepBtn      = g('btnDriftKeep');
-  const actionBtn    = g('btnDriftAction');
-  const brickAction  = () => { addingBrick = true; renderPanelContent(activeId); };
-
-  const setPrompt = (text, keepLbl, actionLbl, fn, cls) => {
-    g('panelDriftText').textContent = text;
-    keepBtn.textContent   = keepLbl;
-    actionBtn.textContent = actionLbl;
-    actionBtn.onclick     = fn;
-    prompt.className = `panel-drift-prompt visible ${cls}`;
-  };
-
-  if (frac !== null && frac > 1) {
-    const label = urgencyAgeLabel(t), inDeep = isDeep(t);
-    if (inDeep && isAvoidance) {
-      setPrompt(`In Deep for ${untouchedDays} days — no dedicated block, no first action yet. What's the one thing you could do right now to start?`, DRIFT_KEEP_NOT_READY, DRIFT_ACTION_BRICK, brickTabAction, 'drift-deep-prompt');
-    } else if (inDeep) {
-      setPrompt(`Needs protected time — ${label} ${frac > 2 ? 'still without a dedicated block' : 'without a dedicated block'}. When are you scheduling this?`, DRIFT_KEEP_DEFAULT, DRIFT_ACTION_BLOCK, driftAction, 'drift-deep-prompt');
-    } else {
-      setPrompt(`Rated "${URG_WORDS[t.u]}" — ${label}. This urgency is ${frac > 2 ? 'significantly overdue' : 'past its expected window'}. Still accurate?`, DRIFT_KEEP_ACCURATE, DRIFT_ACTION_REASSESS, driftAction, 'drift-flow');
-    }
-  } else if (isAvoidance) {
-    setPrompt(`${untouchedDays} days without a first action. What's the one concrete thing you could do to start?`, DRIFT_KEEP_NOT_READY, DRIFT_ACTION_BRICK, brickTabAction, 'drift-deep-prompt');
-  } else {
-    prompt.className = 'panel-drift-prompt'; actionBtn.onclick = driftAction;
-  }
-
-  g('pAvoidancePrompt').classList.remove('visible');
-  if (isAvoidance && !addingBrick) addingBrick = true;
-
   paintSliders(SLIDERS_EDIT, t.i, t.u, t.s);
   g('eImp').value = t.i; g('eUrg').value = t.u; g('eSim').value = t.s;
 
@@ -1035,8 +731,6 @@ function renderPanelContent(id) {
   // Planned bricks (next steps)
   renderPlanned(t);
 
-  // Linked tasks section
-  renderPanelLinks(id);
 }
 
 function renderBrickList(t) {
@@ -1110,67 +804,6 @@ function renderPlanned(t) {
   if (inp)       inp.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); if (e.key === 'Escape') { row.classList.add('hidden'); cta.classList.remove('hidden'); } });
 }
 
-function renderPanelLinks(id) {
-  const el = g('pLinkedTasks');
-  if (!el) return;
-
-  // Create mode: render pending links with search button
-  if (panelMode === 'create' || panelMode === 'triage') {    let html = '';
-    if (pendingCreateLinks.length) {
-      pendingCreateLinks.forEach((lnk, idx) => {
-        const t = byId(lnk.targetId); if (!t) return;
-        const col = TIER_HEX[t.tier.key] || 'var(--muted)';
-        const label = lnk.type === 'before' ? 'Required for' : 'Pending on';
-        html += `<div class="panel-link-group-label">${label}</div>
-          <div class="panel-link-chip">
-            <span class="plc-dot" style="background:${col}"></span>
-            <span class="plc-name">${esc(t.name)}</span>
-            <button class="plc-unlink" data-action="remove-pending-link" data-idx="${idx}">×</button>
-          </div>`;
-      });
-    }
-    html += `<div class="panel-link-add"><span class="link-add-btn" data-action="open-link-search" data-id="__create__">+ Link to another task</span></div>`;
-    el.innerHTML = html;
-    return;
-  }
-  const t = byId(id);
-  if (!t) return;
-  const links = (t.links || []);
-  if (!links.length) {
-    el.innerHTML = `<div class="panel-link-add"><span class="link-add-btn" data-action="open-link-search" data-id="${t.id}">+ Link to another task</span></div>`;
-    return;
-  }
-  const befores = links.filter(l => l.type === 'after').map(l => byId(l.targetId)).filter(Boolean);
-  const afters  = links.filter(l => l.type === 'before').map(l => byId(l.targetId)).filter(Boolean);
-  let html = '';
-  if (befores.length) {
-    html += `<div class="panel-link-group-label">Pending on</div>`;
-    html += befores.map(linked => {
-      const col = TIER_HEX[linked.tier.key] || 'var(--muted)';
-      return `<div class="panel-link-chip before-chip">
-        <span class="plc-dot" style="background:${col}"></span>
-        <span class="plc-name" data-action="open-panel" data-id="${linked.id}">${esc(linked.name)}</span>
-        <button class="plc-go" data-action="open-panel" data-id="${linked.id}">Go →</button>
-        <button class="plc-unlink" data-action="unlink-tasks" data-id="${t.id}" data-targetid="${linked.id}">×</button>
-      </div>`;
-    }).join('');
-  }
-  if (afters.length) {
-    html += `<div class="panel-link-group-label">Required for</div>`;
-    html += afters.map(linked => {
-      const col = TIER_HEX[linked.tier.key] || 'var(--muted)';
-      return `<div class="panel-link-chip after-chip">
-        <span class="plc-dot" style="background:${col}"></span>
-        <span class="plc-name" data-action="open-panel" data-id="${linked.id}">${esc(linked.name)}</span>
-        <button class="plc-go" data-action="open-panel" data-id="${linked.id}">Go →</button>
-        <button class="plc-unlink" data-action="unlink-tasks" data-id="${t.id}" data-targetid="${linked.id}">×</button>
-      </div>`;
-    }).join('');
-  }
-  html += `<div class="panel-link-add"><span class="link-add-btn" data-action="open-link-search" data-id="${t.id}">+ Link to another task</span></div>`;
-  el.innerHTML = html;
-}
-
 function updateEditPreview() {
   const i = +g('eImp').value, u = +g('eUrg').value, s = +g('eSim').value;
   paintSliders(SLIDERS_EDIT, i, u, s);
@@ -1188,8 +821,8 @@ function updateEditPreview() {
   if (changed) {
     g('pScoreFrom').textContent     = t.sc;          g('pScoreFrom').style.color     = tierUI(t.tier.key).color;
     g('pScoreFromTier').textContent = tierUI(t.tier.key).label;   g('pScoreFromTier').style.color = tierUI(t.tier.key).color;
-    g('pScoreTo').textContent       = newSc;          g('pScoreTo').style.color       = newTier.color;
-    g('pScoreToTier').textContent   = newTier.label;  g('pScoreToTier').style.color   = newTier.color;
+    g('pScoreTo').textContent       = newSc;          g('pScoreTo').style.color       = tierUI(newTier.key).color;
+    g('pScoreToTier').textContent   = tierUI(newTier.key).label;  g('pScoreToTier').style.color = tierUI(newTier.key).color;
     const diff = g('pScoreDiff');
     diff.textContent = delta === 0 ? '±0' : delta > 0 ? `+${delta}` : `${delta}`;
     diff.className   = `psb-diff ${delta === 0 ? 'delta-same' : delta > 0 ? 'delta-up' : 'delta-down'}`;
@@ -1242,42 +875,6 @@ function commitBrick(id) {
   addBrick(id, text);
 }
 
-function commitContextEdit() {
-  const t = byId(activeId); if (!t) return;
-  commitTask(() => { t.context = (g('panelContextInput').value || '').trim(); });
-}
-
-// ─── DRIFT ACTIONS ───────────────────────────────────────────────────────────
-
-function keepUrgency() {
-  const t = byId(activeId); if (!t) return;
-  commitTask(() => { t.urgencySetAt = Date.now(); });
-  renderBoardCard(activeId);
-  // Just hide the prompt — no full re-render needed
-  const prompt = g('panelDriftPrompt');
-  if (prompt) prompt.className = 'panel-drift-prompt';
-}
-
-function driftAction() {
-  const t = byId(activeId); if (!t) return;
-  // Open Score tab and scroll to urgency slider
-  openPanelTab('score');
-  setTimeout(() => {
-    const el = g('eUrg'); if (!el) return;
-    el.scrollIntoView({ behavior:'smooth', block:'nearest' });
-    const row = el.closest('.cslider-row');
-    if (row) {
-      row.style.transition = 'background .15s';
-      row.style.background = isDeep(t) ? 'rgba(99,102,241,.10)' : 'rgba(245,158,11,.09)';
-      setTimeout(() => { row.style.background = ''; }, 700);
-    }
-  }, 60);
-}
-
-// Drop a brick action — opens bricks tab directly
-function brickTabAction() {
-  openPanelTab('progress');
-}
 // ─── DONE MODAL ──────────────────────────────────────────────────────────────
 
 function openDoneModal(zone) {
@@ -1781,10 +1378,6 @@ document.addEventListener('click', e => {
     case 'open-capture':     openCapture();                                 break;
     case 'open-done':        openDoneModal();                               break;
     case 'timer-stop':       timerStop(false);                              break;
-    case 'open-link-search':   openLinkSearch(id);                          break;
-    case 'ls-select':          selectLinkResult(+el.dataset.idx);           break;
-    case 'remove-pending-link': pendingCreateLinks.splice(+el.dataset.idx, 1); renderPanelLinks(null); break;
-    case 'unlink-tasks':       unlinkTasks(id, +el.dataset.targetid);       break;
   }
 });
 
@@ -1828,10 +1421,9 @@ function _doSearch() {
   const scored=tasks.map(t => {
     const nm=t.name.toLowerCase().includes(q);
     const no=(t.note||'').toLowerCase().includes(q);
-    const cx=(t.context||'').toLowerCase().includes(q);
     const bk=(t.bricks||[]).some(b=>(b.text||'').toLowerCase().includes(q));
-    if (!nm&&!no&&!cx&&!bk) return null;
-    return { t, rank:nm?0:(no||cx)?1:2, nm, no, cx, bk };
+    if (!nm&&!no&&!bk) return null;
+    return { t, rank:nm?0:no?1:2, nm, no, bk };
   }).filter(Boolean).sort((a,b)=>a.rank-b.rank||b.t.sc-a.t.sc);
   searchResults=scored.map(s=>s.t);
   if (!scored.length) {
@@ -1840,11 +1432,10 @@ function _doSearch() {
   }
   const ZL={flow:'List',deep:'Deep',drift:'Drift box'};
   const placeOf=t=>isDrifted(t)||(slipRatio(t)??0)>1?'drift':isDeep(t)?'deep':'flow';
-  el.innerHTML=scored.map(({t,nm,no,cx,bk})=>{
+  el.innerHTML=scored.map(({t,nm,no,bk})=>{
     const zone=placeOf(t);
     let mc='';
     if (!nm&&no&&t.note)     { const i=t.note.toLowerCase().indexOf(q); mc=`Note: ${t.note.slice(Math.max(0,i-20),i+40).trim()}`; }
-    else if (!nm&&cx&&t.context) mc=`Context: ${t.context}`;
     else if (!nm&&bk) { const b=t.bricks.find(b=>(b.text||'').toLowerCase().includes(q)); if (b?.text) mc=`Progress: ${b.text.slice(0,50)}`; }
     return `<div class="search-result${t.done?' sr-done':''}" data-action="select-search" data-id="${t.id}">
       <span class="sr-score" style="color:${tierUI(t.tier.key).color||'var(--muted)'}">${t.sc}</span>
@@ -1883,9 +1474,6 @@ try {
 // ── Escape capture — each overlay closes only itself, topmost wins ──
 onEscapeCapture('timerModalOverlay', () => closeModal('timerModalOverlay'));
 onEscapeCapture('confirmOverlay',    () => closeModal('confirmOverlay'));
-onEscapeCapture('linkTypeChooser',   closeLinkTypeChooser);
-onEscapeCapture('mergeModalOverlay', closeMergeModal);
-onEscapeCapture('linkSearchOverlay', closeLinkSearch);
 onEscapeCapture('searchOverlay',     closeSearch);
 onEscapeCapture('driftBoxOverlay',   closeDriftBox);
 onEscapeCapture('trophyOverlay',     closeTrophy);
@@ -1994,31 +1582,6 @@ g('haloSessionCard').addEventListener('click', e => {
 });
 
 g('btnApplyScore').addEventListener('click', applyScoreEdit);
-g('btnDriftKeep').addEventListener('click', keepUrgency);
-g('btnDriftAction').addEventListener('click', driftAction);
-document.querySelector('.panel .agency-row').addEventListener('click', e => {
-  const btn = e.target.closest('.agency-btn[data-ctx="panel"]');
-  if (btn) setPanelAgency(btn.dataset.agency);
-});
-
-// Link search overlay
-g('linkSearchOverlay').addEventListener('click', e => { if (e.target === g('linkSearchOverlay')) closeLinkSearch(); });
-g('btnLinkSearchClose').addEventListener('click', closeLinkSearch);
-g('linkSearchInput').addEventListener('input', e => renderLinkSearch(e.target.value.trim()));
-
-// Link type chooser
-g('btnLinkBefore').addEventListener('click', () => applyLinkType('before'));
-g('btnLinkAfter').addEventListener('click',  () => applyLinkType('after'));
-g('btnLinkMerge').addEventListener('click',  () => applyLinkType('merge'));
-g('btnLtcCancel').addEventListener('click',  closeLinkTypeChooser);
-
-// Merge modal
-g('mergeModalOverlay').addEventListener('click', e => { if (e.target === g('mergeModalOverlay')) closeMergeModal(); });
-g('btnMergeClose').addEventListener('click', closeMergeModal);
-g('btnMergeConfirm').addEventListener('click', confirmMerge);
-g('mImp').addEventListener('input', mergePreview);
-g('mUrg').addEventListener('input', mergePreview);
-g('mSim').addEventListener('input', mergePreview);
 
 } catch(err) { console.error('[MM] Listener setup failed:', err); }
 
@@ -2033,16 +1596,15 @@ quickInput.addEventListener('focus', ()=>captureWrap.classList.add('focused'));
 quickInput.addEventListener('blur',  ()=>captureWrap.classList.remove('focused'));
 quickInput.addEventListener('keydown', e => {
   if (e.key!=='Enter') return; e.preventDefault();
-  if (e.shiftKey) { const n=quickInput.value.trim(); if(!n) return; quickInput.value=''; captureWrap.classList.remove('focused'); closeCapture(); openPanelCreate(n); }
-  else quickCapture();
+  if (e.shiftKey) captureRateNow(); else quickCapture();
 });
 
-// Compact capture row under the header (interim — becomes a popover in session ④)
+// Capture popover (spec §5.4): ↵ → Inbox, ⇧↵ / "Rate now" → task panel in create mode.
+// It stays open after ↵ so several things can be captured in a row.
 function openCapture() {
   captureOpen = true;
   g('captureRow').classList.remove('hidden');
   g('btnAdd').setAttribute('aria-expanded', 'true');
-  updateHeaderOffset();
   setTimeout(() => quickInput.focus(), 30);
 }
 function closeCapture() {
@@ -2050,8 +1612,17 @@ function closeCapture() {
   quickInput.blur();
   g('captureRow').classList.add('hidden');
   g('btnAdd').setAttribute('aria-expanded', 'false');
-  updateHeaderOffset();
 }
+function captureRateNow() {
+  const n = quickInput.value.trim(); if (!n) { quickInput.focus(); return; }
+  quickInput.value = ''; closeCapture(); openPanelCreate(n);
+}
+g('btnCaptureInbox').addEventListener('click', () => { quickCapture(); quickInput.focus(); });
+g('btnCaptureRate').addEventListener('click', captureRateNow);
+// Click outside the popover closes it
+document.addEventListener('mousedown', e => {
+  if (captureOpen && !e.target.closest('#captureRow, #btnAdd')) closeCapture();
+});
 
 // ─── BOOT ────────────────────────────────────────────────────────────────────
 
@@ -2076,7 +1647,7 @@ if (!tasks.length) {
     [1003,'Architecture review doc',     3,3,2,now-10*DAY_MS],
     [1004,'Research competitor pricing', 3,2,3,now-16*DAY_MS],
     [1005,'Write Q2 OKR update',         3,3,3,now-3*DAY_MS],
-  ].map(([id,name,i,u,s,createdAt])=>makeTask(id,name,i,u,s,'solo','','',createdAt));
+  ].map(([id,name,i,u,s,createdAt])=>makeTask(id,name,i,u,s,'',createdAt));
   rebuildTaskMap();
   save();
 }

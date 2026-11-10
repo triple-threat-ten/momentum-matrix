@@ -43,23 +43,18 @@
       </div>
     </div><!-- /header-inner -->
 
-    <!-- Capture row — interim; becomes a popover in session ④ -->
-    <div class="capture-row hidden" id="captureRow">
+    <!-- Capture popover (spec §5.4) — ↵ saves to Inbox, ⇧↵ / Rate now opens the task panel -->
+    <div class="capture-pop hidden" id="captureRow" role="dialog" aria-label="Capture a task">
       <div class="quick-capture-wrap" id="captureWrap">
         <span class="quick-capture-icon">⚡</span>
         <input class="quick-capture-input" id="quickInput" type="text"
-          placeholder="New task…" aria-label="New task"
+          placeholder="What's on your mind?" aria-label="New task"
           autocomplete="off" spellcheck="false" />
-        <div class="quick-capture-hints">
-          <div class="qch-idle">
-            <kbd class="qch-key">↵</kbd><span class="qch-lbl">inbox</span>
-          </div>
-          <div class="qch-active">
-            <kbd class="qch-key">↵</kbd><span class="qch-lbl">inbox</span>
-            <div class="qch-divider"></div>
-            <kbd class="qch-key">⇧↵</kbd><span class="qch-lbl">rate now</span>
-          </div>
-        </div>
+      </div>
+      <div class="capture-actions">
+        <span class="capture-hint"><kbd class="qch-key">↵</kbd> Inbox · <kbd class="qch-key">⇧↵</kbd> Rate now</span>
+        <button class="capture-btn" id="btnCaptureInbox">Save to Inbox</button>
+        <button class="capture-btn capture-btn-primary" id="btnCaptureRate">Rate now</button>
       </div>
     </div>
   </header>
@@ -263,14 +258,6 @@
         </div>
       </div>
 
-      <div class="panel-drift-prompt" id="panelDriftPrompt">
-        <div class="drift-prompt-text" id="panelDriftText"></div>
-        <div class="drift-prompt-actions">
-          <button class="btn-drift-keep"     id="btnDriftKeep">Still accurate</button>
-          <button class="btn-drift-reassess" id="btnDriftAction">Reassess ↓</button>
-        </div>
-      </div>
-
       <div class="panel-ctx-bar" id="panelCtxBar">
         <button class="panel-ctx-cell" id="pCtxScore"    onclick="openPanelTab('score')"    aria-pressed="false">
           <span class="panel-ctx-val" id="pCtxScoreVal">—</span>
@@ -279,14 +266,6 @@
         <button class="panel-ctx-cell" id="pCtxProgress" onclick="openPanelTab('progress')" aria-pressed="false">
           <span class="panel-ctx-val" id="pCtxProgressVal">0</span>
           <span class="panel-ctx-name">Bricks</span>
-        </button>
-        <button class="panel-ctx-cell" id="pCtxLinks"    onclick="openPanelTab('links')"    aria-pressed="false">
-          <span class="panel-ctx-val" id="pCtxLinksVal">0</span>
-          <span class="panel-ctx-name">Dependencies</span>
-        </button>
-        <button class="panel-ctx-cell" id="pCtxAgency"   onclick="openPanelTab('agency')"   aria-pressed="false">
-          <span class="panel-ctx-val" id="pCtxAgencyVal">—</span>
-          <span class="panel-ctx-name">Agency</span>
         </button>
       </div>
     </div>
@@ -361,33 +340,10 @@
 
         <div class="panel-acc-panel hidden" id="pTabProgress">
           <div class="panel-section-label" id="pBricksLabel">// progress — drop a brick each time you touch this</div>
-          <div class="panel-avoidance-prompt" id="pAvoidancePrompt">
-            <div class="pap-text" id="pAvoidanceText"></div>
-          </div>
           <div id="pBrickList"></div>
           <div id="pBrickCta"></div>
           <div class="brick-health-hint hidden" id="pBrickHealth"></div>
           <div id="pPlanned"></div>
-        </div>
-
-        <div class="panel-acc-panel hidden" id="pTabLinks">
-          <div class="panel-section-label">// linked tasks</div>
-          <div id="pLinkedTasks"></div>
-        </div>
-
-        <div class="panel-acc-panel hidden" id="pTabAgency">
-          <div class="panel-section-label">// who acts?</div>
-          <div class="agency-row mt-agency-edit">
-            <span class="agency-lbl">Who acts?</span>
-            <button class="agency-btn" data-agency="solo"    data-ctx="panel">🙋 Mine</button>
-            <button class="agency-btn" data-agency="shared"  data-ctx="panel">🤝 Shared</button>
-            <button class="agency-btn" data-agency="waiting" data-ctx="panel">⏸ Waiting</button>
-          </div>
-          <div class="context-row" id="panelContextRow">
-            <input class="context-input" id="panelContextInput" type="text"
-              placeholder="Who's involved / what are you waiting for?" maxlength="120"
-              onblur="commitContextEdit()"/>
-          </div>
         </div>
 
       </div>
@@ -442,7 +398,7 @@
       <!-- Create / triage mode footer -->
       <div class="pf-state pf-state--hidden" id="pfCreate">
         <div class="panel-actions">
-          <button class="btn-pstart" id="btnPanelCreate">Add to Matrix</button>
+          <button class="btn-pstart" id="btnPanelCreate">Add</button>
           <button class="btn-pdone pf-triage-skip hidden" id="btnPanelTriageSkip" data-action="triage-panel-skip">Skip</button>
           <button class="btn-pdone pf-triage-del hidden" id="btnPanelTriageDel" data-action="triage-panel-delete">Delete</button>
           <button class="btn-pdone pf-triage-del hidden" id="btnPanelCreateDel" data-action="create-panel-delete">Delete</button>
@@ -454,131 +410,6 @@
   </div>
 </div>
 
-
-<!-- LINK SEARCH OVERLAY -->
-<div class="link-search-overlay hidden" id="linkSearchOverlay">
-  <div class="link-search-box">
-    <div class="link-search-header">
-      <span class="link-search-title">Link to a task</span>
-      <button class="link-search-close" id="btnLinkSearchClose">×</button>
-    </div>
-    <div class="link-search-input-wrap">
-      <input class="link-search-input" id="linkSearchInput" type="text" placeholder="Search tasks…" autocomplete="off"/>
-    </div>
-    <div class="link-search-results" id="linkSearchResults">
-      <div class="ls-empty">Type to search tasks to link</div>
-    </div>
-  </div>
-</div>
-
-<!-- LINK TYPE CHOOSER -->
-<div class="ltc-overlay hidden" id="linkTypeChooser">
-  <div class="ltc-modal">
-    <div class="ltc-header">
-      <span class="ltc-title">How are these related?</span>
-      <button class="ltc-close" id="btnLtcCancel">×</button>
-    </div>
-    <div class="ltc-tasks">
-      <span class="ltc-task-name" id="ltcFromName"></span>
-      <span class="ltc-arrow">↔</span>
-      <span class="ltc-task-name" id="ltcToName"></span>
-    </div>
-    <div class="ltc-options">
-      <button class="ltc-opt" id="btnLinkBefore">
-        <span class="ltc-opt-icon">→</span>
-        <span class="ltc-opt-body">
-          <span class="ltc-opt-label">Do this first, then that</span>
-          <span class="ltc-opt-sub" id="ltcSubBefore"></span>
-        </span>
-      </button>
-      <button class="ltc-opt" id="btnLinkAfter">
-        <span class="ltc-opt-icon">←</span>
-        <span class="ltc-opt-body">
-          <span class="ltc-opt-label">That one must happen first</span>
-          <span class="ltc-opt-sub" id="ltcSubAfter"></span>
-        </span>
-      </button>
-      <button class="ltc-opt ltc-opt-merge" id="btnLinkMerge">
-        <span class="ltc-opt-icon">⊕</span>
-        <span class="ltc-opt-body">
-          <span class="ltc-opt-label">These are the same task — merge</span>
-          <span class="ltc-opt-sub">One task survives; you set the final score</span>
-        </span>
-      </button>
-    </div>
-  </div>
-</div>
-
-<!-- MERGE MODAL -->
-<div class="merge-overlay hidden" id="mergeModalOverlay">
-  <div class="merge-modal">
-    <div class="merge-header">
-      <span class="merge-label">// merge tasks</span>
-      <button class="merge-close" id="btnMergeClose">×</button>
-    </div>
-    <div class="merge-context">
-      <div class="merge-context-row">
-        <span class="merge-context-lbl">Keeping</span>
-        <span class="merge-task-name" id="mergeKeepName"></span>
-      </div>
-      <div class="merge-context-row">
-        <span class="merge-context-lbl">Absorbing</span>
-        <span class="merge-task-name muted" id="mergeAbsorbName"></span>
-      </div>
-    </div>
-    <div class="merge-field-label">Merged task name</div>
-    <input class="merge-name-input" id="mergeResultName" type="text" maxlength="120" placeholder="Task name…"/>
-    <div class="merge-field-label">Note (edit or combine)</div>
-    <textarea class="merge-note-input" id="mergeResultNote" rows="3" placeholder="Add a note…" spellcheck="false"></textarea>
-    <div class="merge-field-label">Set the score for the merged task</div>
-    <div class="merge-orb-row">
-      <div class="merge-orb-score" id="mergeOrbScore">—</div>
-      <div class="merge-orb-tier"  id="mergeOrbTier">—</div>
-    </div>
-    <div class="csliders">
-      <div class="cslider-row">
-        <div class="cslider-head">
-          <span class="cslider-name axis-imp">Importance</span>
-          <span class="cslider-word axis-imp" id="mImpWord"></span>
-        </div>
-        <input type="range" id="mImp" min="1" max="4" step="1" value="2"/>
-        <div class="cslider-ticks">
-          <span class="cslider-tick" data-dim="mimp" data-val="1">Trivial</span>
-          <span class="cslider-tick" data-dim="mimp" data-val="2">Useful</span>
-          <span class="cslider-tick" data-dim="mimp" data-val="3">Important</span>
-          <span class="cslider-tick" data-dim="mimp" data-val="4">Critical</span>
-        </div>
-      </div>
-      <div class="cslider-row">
-        <div class="cslider-head">
-          <span class="cslider-name axis-urg">Urgency</span>
-          <span class="cslider-word axis-urg" id="mUrgWord"></span>
-        </div>
-        <input type="range" id="mUrg" min="1" max="4" step="1" value="2"/>
-        <div class="cslider-ticks">
-          <span class="cslider-tick" data-dim="murg" data-val="1">Someday</span>
-          <span class="cslider-tick" data-dim="murg" data-val="2">Later</span>
-          <span class="cslider-tick" data-dim="murg" data-val="3">Soon</span>
-          <span class="cslider-tick" data-dim="murg" data-val="4">Now</span>
-        </div>
-      </div>
-      <div class="cslider-row">
-        <div class="cslider-head">
-          <span class="cslider-name axis-sim">Simplicity</span>
-          <span class="cslider-word axis-sim" id="mSimWord"></span>
-        </div>
-        <input type="range" id="mSim" min="1" max="4" step="1" value="3"/>
-        <div class="cslider-ticks">
-          <span class="cslider-tick" data-dim="msim" data-val="1">Heavy</span>
-          <span class="cslider-tick" data-dim="msim" data-val="2">Tricky</span>
-          <span class="cslider-tick" data-dim="msim" data-val="3">Manageable</span>
-          <span class="cslider-tick" data-dim="msim" data-val="4">Effortless</span>
-        </div>
-      </div>
-    </div>
-    <button class="btn-merge-confirm" id="btnMergeConfirm">Merge tasks</button>
-  </div>
-</div>
 
 <!-- Scripts load in dependency order: logic first, storage second, app last.
      logic.js has no dependencies.
