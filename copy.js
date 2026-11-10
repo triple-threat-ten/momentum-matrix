@@ -170,3 +170,43 @@ const CONFIRM_SWITCH_TIMER   = (from, to) => `Stop "${from}" and start "${to}"?`
 
 // ─── AGENCY LABELS ────────────────────────────────────────────────────────────
 const AGENCY_LABELS = { solo:'Mine', shared:'Shared', waiting:'Waiting' };
+
+// ═══ v26 CONTEXTS — main screen (spec §7) ════════════════════════════════════
+// Retired strings above (HALO_*, EMPTY_FLOW/DEEP/DRIFT, BADGE_*, REASON_*, drift-drop nudges)
+// are no longer referenced; they get removed in the copy pass (session ⑥).
+
+const MODE_UI = {
+  quick: { name:'Quick wins',  state:'Low energy, a few minutes',         energy:1, kicker:'Quick win',
+           nudge:'Easy-to-start tasks come first. Small wins build momentum.' },
+  zone:  { name:'In the zone', state:"Steady rhythm, clear what's pressing", energy:2, kicker:'Most pressing',
+           nudge:'Time-sensitive tasks come first, and anything slipping past its horizon jumps ahead.' },
+  focus: { name:'Focus time',  state:'Fresh mind, room to go deep',       energy:3, kicker:'Your big work',
+           nudge:'Your most meaningful work comes first. Protect the time.' },
+};
+const BALANCED_TITLE   = 'Balanced view';
+const BALANCED_LINE    = 'the best mix of all three. Pick a mode to match your energy.';
+const BALANCED_KICKER  = 'Do this now';
+const HERO_CTA         = "I'm on it";
+const PICKER_LABEL     = 'How long?';
+const PICKER_CANCEL    = 'cancel';
+const FIRE_BANNER      = "Can't wait";
+const BACK_BALANCED    = '× Back to Balanced';
+const BACK_NEXT_TIME   = 'Back to Balanced next time you open HALO°.';
+const LIST_TITLE       = 'Further down';
+const COL_TASK = 'Task', COL_SIMP = 'Simp.', COL_URG = 'Urg.', COL_IMP = 'Imp.', COL_MATTER = 'Matter';
+const AXIS_SHORT       = { s:'S', u:'U', i:'I' };
+const FOLD_MORE        = (n) => `Show ${n} more`;
+const FOLD_MORE_SUB    = 'ranked lower in this view';
+const FOLD_LESS        = 'Show less';
+const DEEP_BADGE       = 'Deep';
+const MARK_DONE        = 'Mark done';
+const DONE_LINK        = (n) => `${n} done`;
+const HDR_ACTIVE       = (n) => `${n} active`;
+const SLIP_BADGE_TITLE = 'Urgency rating past its horizon — open the Drift box';
+const DRIFT_BTN_COUNTS = (slipping, drifted) =>
+  slipping + drifted === 0 ? 'all clear' : `${slipping} slipping · ${drifted} drifted`;
+const REASON_DRIFTED   = 'Rated Someday · drifted away';
+const EMPTY_NONE       = 'Nothing here yet.';
+const EMPTY_ADD        = 'Add what matters →';
+const EMPTY_ALL_DRIFT  = (n) => `Your list is clear. ${n} task${n !== 1 ? 's are' : ' is'} drifting —`;
+const EMPTY_REVIEW     = 'Review →';

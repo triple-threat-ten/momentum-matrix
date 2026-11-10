@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23E6EBF5'/%3E%3Ctext x='16' y='23' font-size='18' font-weight='800' font-family='system-ui,-apple-system,sans-serif' text-anchor='middle' letter-spacing='-1'%3E%3Ctspan fill='%231A1D2B'%3EM%3C/tspan%3E%3Ctspan fill='%236366F1'%3EM%3C/tspan%3E%3C/text%3E%3C/svg%3E">
-<title>Momentum Matrix</title>
+<title>HALO°</title>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <link rel="manifest" href="manifest.json">
@@ -13,242 +13,96 @@
 <div class="app">
 
   <header>
-    <div class="header-inner">
-    <div>
-      <span class="logo-mark">v25.6</span>
-      <h1>Momentum<span>Matrix</span></h1>
-      <p class="tagline">// capture · triage · act</p>
-    </div>
-    <div class="header-actions">
-      <!-- Search -->
-      <button class="btn-search" id="btnSearch" title="Search tasks (/)">
-        <span>🔍</span>
-      </button>
-
-      <!-- Export -->
-      <button class="btn-hdr-action" id="btnExport"
-              title="Download all tasks as a .json backup file">↓ export</button>
-
-      <!-- Import (hidden file input + visible label) -->
-      <label class="btn-hdr-action" id="btnImport"
-             title="Restore tasks from a previously exported .json file">
-        ↑ import
-        <input type="file" accept=".json" id="importInput" style="display:none">
-      </label>
-
-      <!-- Reset -->
-      <button class="btn-hdr-action btn-hdr-reset" id="btnReset"
-              title="Clear all saved data and reset board">↺ reset</button>
-
-      <!-- Manage tasks — opens board panel -->
-      <button class="btn-board" id="btnBoard" title="Manage tasks (N)">
-        <div class="btn-board-icon">
-          <span></span><span></span><span></span>
-        </div>
-        Manage tasks
-        <span class="btn-board-count" id="boardCount">0</span>
-      </button>
-    </div>
+    <div class="header-inner ctx-header">
+      <div class="brand">
+        <span class="wordmark">HALO°</span>
+        <span class="logo-mark">v25.6</span>
+        <span class="hdr-meta"><span id="hdrDate"></span><span class="hdr-dot">·</span><span id="hdrActive">0 active</span></span>
+      </div>
+      <div class="header-actions">
+        <button class="btn-driftbox" id="btnDriftBox" title="Tasks drifting away from you">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 7c3-2 6-2 9 0s6 2 9 0"/><path d="M3 13c3-2 6-2 9 0s6 2 9 0" opacity=".6"/><path d="M3 19c3-2 6-2 9 0s6 2 9 0" opacity=".3"/></svg>
+          Drift box · <span id="driftBoxCount">all clear</span>
+        </button>
+        <button class="btn-inbox hidden" id="btnInbox" title="Triage captured items">Inbox · <span id="inboxCount">0</span></button>
+        <button class="btn-search" id="btnSearch" title="Search tasks (/)" aria-label="Search tasks">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        </button>
+        <button class="btn-add" id="btnAdd" title="Capture a task (N)" aria-expanded="false">+ Add</button>
+        <details class="hdr-more">
+          <summary aria-label="More">···</summary>
+          <div class="hdr-more-menu">
+            <button class="btn-hdr-action" id="btnExport" title="Download all tasks as a .json backup file">↓ export</button>
+            <label class="btn-hdr-action" id="btnImport" title="Restore tasks from a previously exported .json file">
+              ↑ import
+              <input type="file" accept=".json" id="importInput" style="display:none">
+            </label>
+            <button class="btn-hdr-action btn-hdr-reset" id="btnReset" title="Clear all saved data and reset">↺ reset</button>
+          </div>
+        </details>
+      </div>
     </div><!-- /header-inner -->
-  </header>
 
-  <!-- ══════════════════════════════════════════════════════════════
-       ACT — single-page landing, no scroll
-  ══════════════════════════════════════════════════════════════ -->
-  <div class="act-page" id="actPage">
-
-    <div class="act-page-inner">
-      <div class="section-label">// act</div>
-
-      <!-- HALO PANEL -->
-      <div class="halo-panel" id="haloPanel">
-
-        <!-- Streak — reserved height always (visibility:hidden when inactive) -->
-        <div class="halo-streak" id="haloStreak">
-          <div class="halo-streak-dot" id="haloStreakDot"></div>
-          <div class="halo-streak-text" id="haloStreakText"></div>
-        </div>
-
-        <!-- Active session card — replaces halo block + peek when timer running -->
-        <div class="halo-session-card" id="haloSessionCard" style="display:none">
-          <div class="hsc-header">
-            <div class="hsc-eyebrow">Block in progress</div>
-            <div class="hsc-task" id="hscTask"></div>
-          </div>
-          <div class="hsc-countdown-wrap">
-            <div class="hsc-countdown" id="hmtCountdown">25:00</div>
-          </div>
-          <div class="hsc-footer">
-            <button class="hsc-btn-open" id="hmtOpen">Open task</button>
-            <button class="hsc-btn-pause" id="hscBtnPause" title="Pause">
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor">
-                <rect x="1" y="1" width="3.5" height="10" rx="1"/>
-                <rect x="7.5" y="1" width="3.5" height="10" rx="1"/>
-              </svg>
-            </button>
-            <button class="hsc-btn-stop" id="hmtStop">Stop</button>
-          </div>
-        </div>
-
-        <!-- Deep halo card block -->
-        <div class="halo-block" id="haloBlock">
-          <div class="halo-view" id="haloViewDeep">
-            <div id="haloCard"></div>
-          </div>
-          <!-- Inline duration picker — replaces card content on "Start session" -->
-          <div class="halo-view halo-view-hidden" id="haloViewPicker">
-            <div class="halo-picker">
-              <div class="halo-picker-task" id="haloPickerTask"></div>
-              <div class="halo-picker-label">How long is this block?</div>
-              <div class="halo-picker-durations">
-                <button class="halo-picker-dur" data-action="halo-pick-dur" data-mins="15">15 min</button>
-                <button class="halo-picker-dur" data-action="halo-pick-dur" data-mins="25">25 min</button>
-                <button class="halo-picker-dur" data-action="halo-pick-dur" data-mins="50">50 min</button>
-              </div>
-              <button class="halo-picker-cancel" data-action="halo-pick-cancel">cancel</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Peek drawer: Flow tasks, always below the halo block -->
-        <div class="peek-trigger" id="peekTrigger">
-          <span class="peek-trigger-text" id="peekTriggerText">3 Flow tasks ready</span>
-          <span class="peek-count" id="peekCount">+3</span>
-          <svg class="peek-chevron" id="peekChevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-        </div>
-        <div class="peek-drawer" id="peekDrawer">
-          <div class="peek-drawer-inner" id="peekDrawerInner"></div>
-        </div>
-
-      </div><!-- /halo-panel -->
-    </div>
-
-  </div><!-- /act-page -->
-
-  <!-- ══════════════════════════════════════════════════════════════
-       BOARD PANEL — right-side slide-in
-  ══════════════════════════════════════════════════════════════ -->
-  <div class="board-panel" id="boardPanel">
-
-    <div class="board-panel-hdr">
-      <div class="board-panel-hdr-top">
-        <div>
-          <div class="board-panel-title">Your tasks</div>
-          <div class="board-panel-sub" id="boardPanelSub">—</div>
-        </div>
-        <button class="board-panel-close" id="btnBoardClose">×</button>
-      </div>
-      <!-- Health badges row -->
-      <div class="board-panel-badges" id="boardPanelBadges">
-        <span class="bz-fire-badge hidden bz-badge-clickable" id="bzFireBadge"></span>
-        <span class="bz-activation-badge hidden bz-badge-clickable" id="bzActivationBadge"></span>
-        <button class="btn-drift-box hidden" id="btnDriftBox" title="Tasks whose urgency rating may need reassessing">⏱ <span id="driftBoxCount">0</span> drifting</button>
-      </div>
-      <!-- Capture bar -->
+    <!-- Capture row — interim; becomes a popover in session ④ -->
+    <div class="capture-row hidden" id="captureRow">
       <div class="quick-capture-wrap" id="captureWrap">
         <span class="quick-capture-icon">⚡</span>
         <input class="quick-capture-input" id="quickInput" type="text"
-          placeholder="New task… (N to focus)"
+          placeholder="New task…" aria-label="New task"
           autocomplete="off" spellcheck="false" />
         <div class="quick-capture-hints">
           <div class="qch-idle">
-            <kbd class="qch-key">N</kbd>
-            <span class="qch-lbl">to focus</span>
+            <kbd class="qch-key">↵</kbd><span class="qch-lbl">inbox</span>
           </div>
           <div class="qch-active">
             <kbd class="qch-key">↵</kbd><span class="qch-lbl">inbox</span>
             <div class="qch-divider"></div>
-            <kbd class="qch-key">⇧↵</kbd><span class="qch-lbl">score now</span>
-            <div class="qch-divider"></div>
+            <kbd class="qch-key">⇧↵</kbd><span class="qch-lbl">rate now</span>
           </div>
         </div>
       </div>
-      <!-- Inbox strip -->
-      <div class="inbox-strip hidden" id="inboxStrip">
-        <div class="inbox-strip-top">
-          <button class="btn-triage" id="btnTriage">
-            ↓ Triage <span class="inbox-count" id="inboxCount">0</span>
-          </button>
-          <span class="inbox-label">// inbox</span>
-        </div>
-        <div class="inbox-cards-scroll" id="inboxCards"></div>
+    </div>
+  </header>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       MAIN — ranked list, re-ranked by focus mode (v26 Contexts)
+  ══════════════════════════════════════════════════════════════ -->
+  <main class="ctx-main" id="ctxMain">
+
+    <section class="ctx-section" aria-label="Focus mode">
+      <div class="ctx-status" id="ctxStatus"></div>
+      <div class="mode-cards" id="modeCards" role="group" aria-label="Pick a mode to match your energy"></div>
+    </section>
+
+    <div id="fireBanner"></div>
+
+    <!-- Active session card — replaces the #1 card while a block runs -->
+    <div class="halo-session-card" id="haloSessionCard" style="display:none">
+      <div class="hsc-header">
+        <div class="hsc-eyebrow">Block in progress</div>
+        <div class="hsc-task" id="hscTask"></div>
+      </div>
+      <div class="hsc-countdown-wrap">
+        <div class="hsc-countdown" id="hmtCountdown">25:00</div>
+      </div>
+      <div class="hsc-footer">
+        <button class="hsc-btn-open" id="hmtOpen">Open task</button>
+        <button class="hsc-btn-pause" id="hscBtnPause" title="Pause" aria-label="Pause">
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor">
+            <rect x="1" y="1" width="3.5" height="10" rx="1"/>
+            <rect x="7.5" y="1" width="3.5" height="10" rx="1"/>
+          </svg>
+        </button>
+        <button class="hsc-btn-stop" id="hmtStop">Stop</button>
       </div>
     </div>
 
-    <!-- Board columns -->
-    <div class="board-panel-body">
-      <div id="moodView">
-        <div class="mv-board">
-          <!-- Flow list -->
-          <div class="mv-col mv-flow" id="mvColFlow">
-            <div class="mv-col-accent"></div>
-            <div class="mv-col-head">
-              <div class="col-head-meta">
-                <span class="col-head-emoji-flow">⚡</span>
-                <span class="mv-col-title">Flow</span>
-              </div>
-              <div class="mv-col-meta">
-                <span class="mv-col-count" id="mvFlowCount"></span>
-                <span class="mv-done-badge" id="mvFlowDone"></span>
-              </div>
-            </div>
-            <div class="mv-col-sub">Any window · clear path, no setup needed</div>
-            <div id="mvFlowConfirm"></div>
-            <div class="mv-flow-list" id="mvFlowList"></div>
-          </div>
+    <div id="heroSlot"></div>
+    <div class="next-cards" id="nextCards"></div>
+    <section class="list-section" id="listSection" aria-label="Further down"></section>
+    <div class="ctx-foot" id="ctxFoot"></div>
 
-          <!-- Deep treemap -->
-          <div class="mv-col mv-deep" id="mvColDeep">
-            <div class="mv-col-accent"></div>
-            <div class="mv-col-head">
-              <div class="col-head-meta">
-                <span class="col-head-emoji-deep">🎯</span>
-                <span class="mv-col-title">Deep</span>
-              </div>
-              <div class="mv-col-meta">
-                <span class="mv-col-count" id="mvDeepCount"></span>
-                <span class="mv-done-badge" id="mvDeepDone"></span>
-              </div>
-            </div>
-            <div class="mv-col-sub">Protected time · hard to start, high stakes</div>
-            <div id="mvDeepConfirm"></div>
-            <div class="mv-treemap" id="mvDeepTreemap"></div>
-          </div>
-        </div>
-
-        <!-- Drift footer strip -->
-        <div class="mv-drift-wrap" id="mvDriftWrap">
-          <div class="mv-drift-footer" id="mvDriftBar">
-            <span class="mv-drift-label">
-              <span class="col-head-emoji-drift">🌫️</span>
-              Drift
-            </span>
-            <div class="mv-drift-right">
-              <span class="mv-done-badge" id="mvDriftDone" onclick="event.stopPropagation();openDoneModal('drift')" style="display:none"></span>
-              <span class="mv-parked-badge hidden" id="mvParkedBadge" onclick="event.stopPropagation();openParkedReview()">↻ <span id="mvParkedStaleCount">0</span> stale</span>
-              <span class="mv-drift-count" id="mvDriftCount"></span>
-              <button class="mv-drift-show" id="btnDriftShow" onclick="toggleDriftDrawer()">↑ show</button>
-            </div>
-          </div>
-        </div>
-      </div><!-- /moodView -->
-
-      <!-- Drift slide-up drawer — direct child of panel body so it overlays correctly -->
-      <div class="mv-drift-drawer" id="mvDriftDrawer">
-        <div class="mv-drift-drawer-hdr">
-          <span class="mv-drift-drawer-title">
-            <span>🌫️</span> Drift — parked tasks
-          </span>
-          <button class="mv-drift-drawer-close" onclick="closeDriftDrawer()">×</button>
-        </div>
-        <div id="mvDriftConfirm"></div>
-        <div class="mv-drift-inner" id="mvDriftInner"></div>
-      </div>
-    </div>
-
-  </div><!-- /board-panel -->
-
-
+  </main>
 
 
   <!-- DRIFT BOX MODAL -->
@@ -276,60 +130,6 @@
       <div class="drift-box-list" id="driftBoxList"></div>
       <div class="drift-box-empty hidden" id="driftBoxEmpty">
         <span>No urgency drift detected — ratings look accurate.</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- FIRE MODAL -->
-  <div class="fire-overlay hidden" id="fireOverlay">
-    <div class="fire-modal" id="fireModal">
-      <div class="fire-modal-header">
-        <div>
-          <div class="fire-modal-label">// fire tasks</div>
-          <div class="fire-modal-title">Needs your attention now</div>
-        </div>
-        <button class="fire-modal-close" id="btnFireClose">×</button>
-      </div>
-      <div class="fire-modal-sub">These tasks score above 78 — high importance, high urgency. Each one is actively competing for your focus. Decide: block time, start now, or reassess if circumstances changed.</div>
-      <div class="fire-modal-list" id="fireModalList"></div>
-      <div class="fire-modal-empty hidden" id="fireModalEmpty">
-        <span>No Fire tasks right now — board is calm.</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- STUCK MODAL -->
-  <div class="stuck-overlay hidden" id="stuckOverlay">
-    <div class="stuck-modal" id="stuckModal">
-      <div class="stuck-modal-header">
-        <div>
-          <div class="stuck-modal-label">// activation block</div>
-          <div class="stuck-modal-title">Hard to start, never started</div>
-        </div>
-        <button class="stuck-modal-close" id="btnStuckClose">×</button>
-      </div>
-      <div class="stuck-modal-sub">These tasks have been in Deep for 7+ days without a single brick. High activation cost — the first action is the hardest. Drop one brick now, block time this week, or move them if they no longer belong in Deep.</div>
-      <div class="stuck-modal-list" id="stuckModalList"></div>
-      <div class="stuck-modal-empty hidden" id="stuckModalEmpty">
-        <span>No stuck tasks — everything in Deep has been touched recently.</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- PARKED REVIEW MODAL -->
-  <div class="parked-overlay hidden" id="parkedOverlay">
-    <div class="parked-modal" id="parkedModal">
-      <div class="parked-header">
-        <div>
-          <div class="parked-label">// parked review</div>
-          <div class="parked-title">Tasks parked 30+ days</div>
-        </div>
-        <button class="parked-close" id="btnParkedClose">×</button>
-      </div>
-      <div class="parked-sub">Still relevant? Reassess or remove.</div>
-      <div class="parked-list" id="parkedList"></div>
-      <div class="parked-empty hidden" id="parkedEmpty">
-        <span>Nothing parked for 30+ days — Drift column looks fresh.</span>
       </div>
     </div>
   </div>

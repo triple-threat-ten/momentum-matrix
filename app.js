@@ -7,13 +7,11 @@ let tasks = [], inbox = [];
 let activeId = null, addingBrick = false, expandedBrickId = null;
 let panelMode = 'view'; // 'view' | 'create' | 'triage'
 let panelTriageQueue = [], panelTriageIdx = 0;
-// Halo panel state
-let haloDeepSkipped = [];        // IDs skipped in deep mode
-let haloDeepCurrent = null;      // current deep task shown
-// Board panel state
-let boardPanelOpen = false;
-// Peek drawer state
-let peekOpen = false;
+// Main screen state (v26 Contexts) — the mode is never persisted (spec §4.3)
+let currentMode    = 'balanced';
+let foldOpen       = false;
+let heroPickerId   = null;   // task whose inline duration picker is open in the #1 card
+let captureOpen    = false;
 
 let doneModalZone = null, trophyTaskId = null;
 
@@ -25,10 +23,8 @@ let timerPaused        = false;
 let timerPauseLeft     = null;  // ms remaining when paused
 let timerTick          = null;  // setInterval handle
 let timerSelectedMins  = 25;    // last-used preset (persists across opens)
-let mvDragId = null, mvPendingDrop = null;
 let searchActive = false, searchSelectedIdx = -1, searchResults = [];
 
-const MV_ZONE_MAP  = { mvColFlow:'flow', mvColDeep:'deep' };
 const SLIDERS_EDIT = { impId:'eImp', urgId:'eUrg', simId:'eSim', impWord:'eImpWord', urgWord:'eUrgWord', simWord:'eSimWord', impDim:'eimp', urgDim:'eurg', simDim:'esim' };
 
 // Score orb rendering geometry
@@ -92,25 +88,9 @@ function onEscapeCapture(overlayId, closeFn) {
     closeFn();
   }, true);
 }
-function clearConfirms(){ ['mvFlowConfirm','mvDeepConfirm','mvDriftConfirm'].forEach(id => { const el = g(id); if (el) el.innerHTML = ''; }); }
-
-// Patch a single card in the already-rendered board without touching any other DOM.
-// Used for mutations that don't change zone, tier, or badge counts.
-function renderBoardCard(id) {
-  const t = byId(id); if (!t) return;
-  // Flow: wrapper is .mv-flow-card[data-id]; replace the whole wrapper
-  document.querySelectorAll(`.mv-flow-card[data-id="${id}"]`).forEach(el => {
-    el.outerHTML = mvFlowCardHtml(t, el.dataset.zone || 'flow');
-  });
-  // Deep: outer container is .mv-tm-cell[data-id]; preserve its flex value
-  document.querySelectorAll(`.mv-tm-cell[data-id="${id}"]`).forEach(el => {
-    el.outerHTML = mvDeepCellHtml(t, el.style.flex || '1');
-  });
-  // Drift: chip has data-id directly
-  document.querySelectorAll(`.mv-drift-chip[data-id="${id}"]`).forEach(el => {
-    el.outerHTML = mvDriftChipHtml(t);
-  });
-}
+// Re-render the main screen after a change that may affect one task's row or card.
+// (Kept under its old name so existing callers in the panel keep working.)
+function renderBoardCard() { renderMain(); }
 
 // ─── SCORE ORB ───────────────────────────────────────────────────────────────
 
@@ -317,30 +297,17 @@ function panelTriageDelete() {
 
 function makeTask(id, name, i, u, s, agency, context, note, createdAt) {
   const sc = calcScore(i, u, s);
-  return { id, name, i, u, s, sc, tier:getTier(sc), done:false, bricks:[], createdAt, doneAt:null, views:[], edits:[], agency, context, note, links:[] };
-}
-
-// Remove a card's DOM wrapper and update its column's done badge count.
-// zone is the task's zone string ('flow'|'deep'|'drift').
-function removeCardFromDOM(id, zone) {
-  const selMap = { flow: `.mv-flow-card[data-id="${id}"]`, deep: `.mv-tm-cell[data-id="${id}"]`, drift: `.mv-drift-chip[data-id="${id}"]` };
-  const badgeMap = { flow: 'mvFlowDone', deep: 'mvDeepDone', drift: 'mvDriftDone' };
-  const wrapper = document.querySelector(selMap[zone]);
-  if (wrapper) wrapper.remove();
-  const doneCount = tasks.filter(t => t.done && zoneFor(t) === zone).length;
-  setDoneBadge(badgeMap[zone], doneCount);
+  return { id, name, i, u, s, sc, tier:getTier(sc), done:false, bricks:[], createdAt, urgencySetAt:Date.now(), doneAt:null, views:[], edits:[], agency, context, note, links:[] };
 }
 
 function deleteTask(id) {
-  const t = byId(id);
-  const zone = t ? zoneFor(t) : null;
   // Clean up any links pointing to this task
   commitTask(() => {
     tasks.forEach(other => { if (other.links) other.links = other.links.filter(l => l.targetId !== id); });
     tasks = tasks.filter(t => t.id !== id);
   });
   if (activeId === id) closePanel();
-  if (zone) removeCardFromDOM(id, zone); else render();
+  render();
 }
 
 // ─── TASK LINKING ─────────────────────────────────────────────────────────────
@@ -570,33 +537,24 @@ function confirmMerge() {
 function toggleDone(id) {
   const t = byId(id); if (!t) return;
   const wasDone = t.done;
-  const zone = zoneFor(t);
   commitTask(() => { t.done = !t.done; t.doneAt = t.done ? Date.now() : null; });
   if (!wasDone) {
-    // Task just marked done — animate out then remove surgically
-    const card = document.querySelector(`.task-card[data-id="${id}"]`);
-    if (card) {
-      card.style.animation = 'doneOut .35s ease forwards'; card.style.pointerEvents = 'none';
-      setTimeout(() => {
-        removeCardFromDOM(id, zone);
-        renderHaloPanel();
-        renderPeekDrawer();
-        const badgeMap = { flow: 'mvFlowDone', deep: 'mvDeepDone', drift: 'mvDriftDone' };
-        const badge = g(badgeMap[zone]);
-        if (badge) {
-          badge.style.transition = 'outline .15s, outline-offset .15s';
-          badge.style.outline = '2px solid var(--latent)'; badge.style.outlineOffset = '2px';
-          setTimeout(() => { badge.style.outline = ''; badge.style.outlineOffset = ''; }, 900);
-        }
-      }, 320);
-    } else { removeCardFromDOM(id, zone); renderHaloPanel(); renderPeekDrawer(); }
-  } else render(); // reopening: card must re-appear, full render needed
+    // Task just marked done — animate its row/card out, then re-rank
+    const els = document.querySelectorAll(`.ctx-main [data-task-id="${id}"]`);
+    if (els.length) {
+      els.forEach(el => { el.style.animation = 'doneOut .3s ease forwards'; el.style.pointerEvents = 'none'; });
+      setTimeout(render, 300);
+      return;
+    }
+  }
+  render();
 }
 
 function applyNewScore(id, i, u, s) {
   const t = byId(id); if (!t) return;
   commitTask(() => {
     t.i = i; t.u = u; t.s = s; t.sc = calcScore(i, u, s); t.tier = getTier(t.sc);
+    t.urgencySetAt = Date.now();
     if (!t.edits) t.edits = []; t.edits.push(Date.now());
   });
   render();
@@ -609,8 +567,6 @@ function addBrick(id, text) {
   commitTask(() => t.bricks.push({ id:Date.now() + Math.random(), text:text.trim(), ts:Date.now() }));
   addingBrick = false;
   renderBoardCard(id);
-  renderHaloPanel();
-  renderPeekDrawer();
   openPanel(id);
 }
 
@@ -618,8 +574,6 @@ function deleteBrick(taskId, brickId) {
   const t = byId(taskId); if (!t) return;
   commitTask(() => { t.bricks = t.bricks.filter(b => String(b.id) !== String(brickId)); });
   renderBoardCard(taskId);
-  renderHaloPanel();
-  renderPeekDrawer();
   openPanel(taskId);
 }
 
@@ -644,8 +598,6 @@ function promotePlanned(taskId, plannedId) {
     t.planned = t.planned.filter(p => String(p.id) !== String(plannedId));
   });
   renderBoardCard(taskId);
-  renderHaloPanel();
-  renderPeekDrawer();
   renderPanelContent(taskId);
 }
 
@@ -660,21 +612,10 @@ function quickCapture() {
 function deleteInboxItem(id) { inbox = inbox.filter(t => t.id !== id); save(); renderInbox(); }
 
 function renderInbox() {
-  const strip = g('inboxStrip'), cards = g('inboxCards'), count = g('inboxCount');
-  if (!inbox.length) { strip.classList.add('hidden'); return; }
-  strip.classList.remove('hidden');
-  const now = Date.now();
+  const btn = g('btnInbox'), count = g('inboxCount'); if (!btn || !count) return;
   count.textContent = inbox.length;
-  count.classList.toggle('stale', inbox.some(t => now - t.capturedAt > 7 * DAY_MS));
-  cards.innerHTML = inbox.map(t => {
-    const ms = now - t.capturedAt;
-    const cls = ms > 14*DAY_MS ? 'aged-red' : ms > 7*DAY_MS ? 'aged-amber' : '';
-    return `<div class="inbox-card ${cls}" data-action="open-triage-for" data-id="${t.id}">
-      <button class="inbox-card-del" data-action="delete-inbox" data-id="${t.id}">×</button>
-      <div class="inbox-card-name">${esc(t.name)}</div>
-      <div class="inbox-card-age ${cls}">${fmtDuration(ms)} ago</div>
-    </div>`;
-  }).join('');
+  btn.classList.toggle('hidden', inbox.length === 0);
+  btn.classList.toggle('stale', inbox.some(t => Date.now() - t.capturedAt > 7 * DAY_MS));
 }
 
 // ─── PANEL ACCORDION ─────────────────────────────────────────────────────────
@@ -799,31 +740,13 @@ function timerRestore() {
   } catch(e) { localStorage.removeItem(TIMER_STORAGE_KEY); }
 }
 
-// ─── HALO INLINE PICKER ─────────────────────────────────────────────────────
+// ─── #1 CARD INLINE PICKER ("I'm on it") ────────────────────────────────────
 
-let haloPickerTaskId = null;
-
-function haloShowPicker(taskId) {
-  haloPickerTaskId = taskId;
-  const task = byId(taskId); if (!task) return;
-  const nameEl = g('haloPickerTask'); if (nameEl) nameEl.textContent = task.name;
-  g('haloViewDeep').classList.add('halo-view-hidden');
-  g('haloViewPicker').classList.remove('halo-view-hidden');
-  // Highlight last-used duration
-  document.querySelectorAll('.halo-picker-dur').forEach(btn => {
-    btn.classList.toggle('halo-picker-dur--last', parseInt(btn.dataset.mins) === timerSelectedMins);
-  });
-}
-
-function haloHidePicker() {
-  haloPickerTaskId = null;
-  g('haloViewDeep').classList.remove('halo-view-hidden');
-  g('haloViewPicker').classList.add('halo-view-hidden');
-}
-
-function haloPickDuration(mins) {
-  const taskId = haloPickerTaskId; if (!taskId) return;
-  haloHidePicker();
+function heroShowPicker(taskId) { heroPickerId = taskId; renderMain(); }
+function heroHidePicker()       { heroPickerId = null;   renderMain(); }
+function heroPickDuration(mins) {
+  const taskId = heroPickerId; if (!taskId) return;
+  heroPickerId = null;
   timerStart(taskId, mins);
 }
 
@@ -924,9 +847,6 @@ function timerRenderCountdown(remainingMs) {
 
   // Session card big countdown
   const hmc = g('hmtCountdown'); if (hmc) hmc.textContent = label;
-
-  // Halo card inline label (when task is current in deep view)
-  const htl = g('haloTimerLabel'); if (htl) htl.textContent = label;
 }
 
 // Sync all surfaces to current timer state
@@ -934,17 +854,10 @@ function timerSyncAll() {
   const running = timerTaskId !== null;
   const task = running ? byId(timerTaskId) : null;
 
-  // Session card replaces halo block + peek when running
+  // Session card replaces the #1 card while a block runs (spec §5.6)
   const sessionCard = g('haloSessionCard');
-  const haloBlock   = g('haloBlock');
-  const peekTrigger = g('peekTrigger');
-  const peekDrawer  = g('peekDrawer');
   if (sessionCard) sessionCard.style.display = running ? 'block' : 'none';
-  if (haloBlock)   haloBlock.style.display   = running ? 'none'  : '';
-  if (peekTrigger) peekTrigger.style.display = running ? 'none'  : '';
-  if (peekDrawer)  peekDrawer.style.display  = running ? 'none'  : '';
 
-  // Update session card content
   if (running && task) {
     const ht = g('hscTask'); if (ht) ht.textContent = task.name;
     if (timerEndsAt) timerRenderCountdown(timerEndsAt - Date.now());
@@ -953,9 +866,8 @@ function timerSyncAll() {
   // Panel footer — only update if panel is open
   if (activeId) timerSyncFooter(activeId);
 
-  // Re-render halo panel and board so card indicators update
-  renderHaloPanel();
-  if (tasks && tasks.length) render();
+  // Re-render so the running dot follows the task wherever it appears
+  render();
 }
 
 // Show correct footer state for currently open task
@@ -1017,7 +929,7 @@ function timerShowPrompt(taskId, type) {
   g('timerModalSkip').addEventListener('click', () => closeModal('timerModalOverlay'));
   g('timerModalCta').addEventListener('click', () => {
     const text = (g('timerModalTa').value || '').trim();
-    if (text) { addBrick(taskId, text); renderHaloPanel(); }
+    if (text) addBrick(taskId, text);
     closeModal('timerModalOverlay');
   });
   // Resume: restart the timer for the same task with same duration
@@ -1044,7 +956,7 @@ function renderPanelContent(id) {
   g('panelContextInput').value = t.context || '';
 
   // Drift / avoidance prompt
-  const frac         = urgencyAgeFrac(t);
+  const frac         = slipRatio(t);
   const untouchedDays = Math.floor((Date.now() - lastTouchedTs(t)) / DAY_MS);
   const isAvoidance  = !t.done && t.bricks.length === 0 && t.s <= 2 && untouchedDays > 7;
   const prompt       = g('panelDriftPrompt');
@@ -1061,16 +973,16 @@ function renderPanelContent(id) {
   };
 
   if (frac !== null && frac > 1) {
-    const label = urgencyAgeLabel(t), inDeep = zoneFor(t) === 'deep';
+    const label = urgencyAgeLabel(t), inDeep = isDeep(t);
     if (inDeep && isAvoidance) {
       setPrompt(`In Deep for ${untouchedDays} days — no dedicated block, no first action yet. What's the one thing you could do right now to start?`, DRIFT_KEEP_NOT_READY, DRIFT_ACTION_BRICK, brickTabAction, 'drift-deep-prompt');
     } else if (inDeep) {
       setPrompt(`Needs protected time — ${label} ${frac > 2 ? 'still without a dedicated block' : 'without a dedicated block'}. When are you scheduling this?`, DRIFT_KEEP_DEFAULT, DRIFT_ACTION_BLOCK, driftAction, 'drift-deep-prompt');
     } else {
-      setPrompt(`Rated "${URG_WORDS[t.u]}" at creation — ${label}. This urgency is ${frac > 2 ? 'significantly overdue' : 'past its expected window'}. Still accurate?`, DRIFT_KEEP_ACCURATE, DRIFT_ACTION_REASSESS, driftAction, 'drift-flow');
+      setPrompt(`Rated "${URG_WORDS[t.u]}" — ${label}. This urgency is ${frac > 2 ? 'significantly overdue' : 'past its expected window'}. Still accurate?`, DRIFT_KEEP_ACCURATE, DRIFT_ACTION_REASSESS, driftAction, 'drift-flow');
     }
   } else if (isAvoidance) {
-    setPrompt(`In ${zoneFor(t) === 'deep' ? 'Deep' : 'Flow'} for ${untouchedDays} days without a first action. What's the one concrete thing you could do to start?`, DRIFT_KEEP_NOT_READY, DRIFT_ACTION_BRICK, brickTabAction, 'drift-deep-prompt');
+    setPrompt(`${untouchedDays} days without a first action. What's the one concrete thing you could do to start?`, DRIFT_KEEP_NOT_READY, DRIFT_ACTION_BRICK, brickTabAction, 'drift-deep-prompt');
   } else {
     prompt.className = 'panel-drift-prompt'; actionBtn.onclick = driftAction;
   }
@@ -1339,7 +1251,7 @@ function commitContextEdit() {
 
 function keepUrgency() {
   const t = byId(activeId); if (!t) return;
-  commitTask(() => { t.urgencyAckedAt = Date.now(); });
+  commitTask(() => { t.urgencySetAt = Date.now(); });
   renderBoardCard(activeId);
   // Just hide the prompt — no full re-render needed
   const prompt = g('panelDriftPrompt');
@@ -1356,7 +1268,7 @@ function driftAction() {
     const row = el.closest('.cslider-row');
     if (row) {
       row.style.transition = 'background .15s';
-      row.style.background = zoneFor(t) === 'deep' ? 'rgba(99,102,241,.10)' : 'rgba(245,158,11,.09)';
+      row.style.background = isDeep(t) ? 'rgba(99,102,241,.10)' : 'rgba(245,158,11,.09)';
       setTimeout(() => { row.style.background = ''; }, 700);
     }
   }, 60);
@@ -1369,8 +1281,8 @@ function brickTabAction() {
 // ─── DONE MODAL ──────────────────────────────────────────────────────────────
 
 function openDoneModal(zone) {
-  doneModalZone = zone;
-  const done = buildZones(tasks)[zone].filter(t => t.done); if (!done.length) return;
+  doneModalZone = zone || 'all';
+  const done = tasks.filter(t => t.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0)); if (!done.length) return;
   const c = CONGRATS[Math.min(Math.floor(done.length / 2), CONGRATS.length - 1)];
   g('doneEmoji').textContent    = c.emoji;
   g('doneCongrats').textContent = c.h;
@@ -1471,30 +1383,30 @@ function dbRow(cls, t, dotColor, meta, age, btnClass, btnLabel, btnAction) {
   return row;
 }
 
-// Drift Box
-function getDriftBoxTasks() {
-  return tasks.filter(t => {
-    if (t.done || (t.u !== 2 && t.u !== 3)) return false;
-    const base = DRIFT_BOX_THRESHOLD[t.u] * DAY_MS;
-    return Date.now() - lastTouchedTs(t) > (t.agency === 'waiting' ? base * 2 : base);
-  }).sort((a, b) => lastTouchedTs(a) - lastTouchedTs(b));
+// Drift Box (interim list view — replaced by the one-card Drift box in session ③)
+function getDriftBoxTasks() { return driftQueue(tasks); }
+
+function driftBoxCounts() {
+  const active = tasks.filter(t => !t.done);
+  return {
+    slipping: active.filter(t => !isDrifted(t) && (slipRatio(t) ?? 0) > 1).length,
+    drifted:  active.filter(isDrifted).length,
+  };
 }
 
 function updateDriftBoxBadge() {
-  const n = getDriftBoxTasks().length;
-  g('driftBoxCount').textContent = n; g('btnDriftBox').classList.toggle('hidden', n === 0);
+  const { slipping, drifted } = driftBoxCounts();
+  const el = g('driftBoxCount'); if (el) el.textContent = DRIFT_BTN_COUNTS(slipping, drifted);
+  const btn = g('btnDriftBox'); if (btn) btn.classList.toggle('is-empty', slipping + drifted === 0);
 }
 
 function openDriftBox() {
   renderModalList('driftBoxList', 'driftBoxEmpty', getDriftBoxTasks(), t => {
-    const stale = Math.floor((Date.now() - lastTouchedTs(t)) / DAY_MS);
-    const thr   = DRIFT_BOX_THRESHOLD[t.u] * (t.agency === 'waiting' ? 2 : 1);
-    const ov    = stale - thr, lbl = URG_WORDS[t.u];
-    const age   = ov < 1 ? `just past ${lbl} threshold` : ov < 7 ? `${ov}d past ${lbl} threshold` : `${Math.floor(ov/7)}w past ${lbl} threshold`;
-    const row   = dbRow('db-task-row', t, TIER_HEX[t.tier.key]||'var(--muted)',
-      `Rated ${lbl} · score ${t.sc} · ${tierUI(t.tier.key).label.replace(/[^\x20-\x7E]/g,'').trim()}`,
-      age, 'db-reassess', 'Reassess ↓', 'drift-box-reassess');
-    row.querySelector('.db-task-age').classList.toggle('age-warn', ov <= 14);
+    const r = slipRatio(t), lbl = URG_WORDS[t.u];
+    const reason = isDrifted(t) ? REASON_DRIFTED : urgencyAgeLabel(t);
+    const row = dbRow('db-task-row', t, TIER_HEX[t.tier.key]||'var(--muted)',
+      `Rated ${lbl} · score ${t.sc}`, reason, 'db-reassess', 'Re-rate ↓', 'drift-box-reassess');
+    row.querySelector('.db-task-age').classList.toggle('age-warn', !isDrifted(t) && r < 2);
     return row;
   });
   openModal('driftBoxOverlay');
@@ -1504,540 +1416,226 @@ function closeDriftBox()       { closeModal('driftBoxOverlay'); }
 function maybeCloseDriftBox(e) { if (e.target === g('driftBoxOverlay')) closeDriftBox(); }
 function driftBoxReassess(id)  { closeDriftBox(); openPanel(id); setTimeout(driftAction, 120); }
 
-// Fire Modal
-function getFireTasks() { return tasks.filter(t => !t.done && t.tier?.key === 'fire').sort((a,b) => b.sc-a.sc); }
-
-function openFireModal() {
-  renderModalList('fireModalList', 'fireModalEmpty', getFireTasks(), t => {
-    const days = Math.floor((Date.now() - lastTouchedTs(t)) / DAY_MS);
-    const bc   = t.bricks.length, zone = zoneFor(t);
-    return dbRow('fire-task-row', t, TIER_HEX[t.tier.key]||'var(--fire)',
-      `Score ${t.sc} · ${zone==='deep'?'Deep':zone==='flow'?'Flow':'Drift'} · ${bc===0?'no bricks yet':bc===1?'1 brick':`${bc} bricks`}`,
-      days===0?'touched today':days===1?'1d untouched':`${days}d untouched`,
-      'fire-open-btn', 'Open →', 'fire-modal-open');
-  });
-  openModal('fireOverlay');
-}
-
-function closeFireModal()  { closeModal('fireOverlay'); }
-function maybeCloseFire(e) { if (e.target === g('fireOverlay')) closeFireModal(); }
-function fireModalOpen(id) { closeFireModal(); openPanel(id); }
-
-// Stuck Modal
-function getStuckTasks() {
-  return tasks.filter(t => !t.done && zoneFor(t)==='deep' && t.s<=2 && t.bricks.length===0 && Date.now()-lastTouchedTs(t)>7*DAY_MS)
-    .sort((a,b) => lastTouchedTs(a)-lastTouchedTs(b));
-}
-
-function openStuckModal() {
-  renderModalList('stuckModalList', 'stuckModalEmpty', getStuckTasks(), t => {
-    const days = Math.floor((Date.now() - lastTouchedTs(t)) / DAY_MS);
-    return dbRow('stuck-task-row', t, TIER_HEX[t.tier.key]||'var(--accent)',
-      `Score ${t.sc} · ${tierUI(t.tier.key).label.replace(/[^\x20-\x7E]/g,'').trim()} · ${SIM_WORDS[t.s]||''}`,
-      `${days===1?'1d':`${days}d`} in Deep without a start`,
-      'stuck-brick-btn', 'Drop a brick →', 'stuck-modal-brick');
-  });
-  openModal('stuckOverlay');
-}
-
-function closeStuckModal()  { closeModal('stuckOverlay'); }
-function maybeCloseStuck(e) { if (e.target === g('stuckOverlay')) closeStuckModal(); }
-function stuckModalBrick(id) {
-  closeStuckModal(); openPanel(id);
-  setTimeout(() => { const cta = g('pBrickCta'); if (cta) cta.scrollIntoView({ behavior:'smooth', block:'center' }); }, 180);
-}
-
-// Parked Review
-function getParkedStaleTasks() {
-  return tasks.filter(t => !t.done && zoneFor(t)==='drift' && Date.now()-lastTouchedTs(t)>PARKED_STALE_MS)
-    .sort((a,b) => lastTouchedTs(a)-lastTouchedTs(b));
-}
-
-function updateParkedBadge() {
-  const n=getParkedStaleTasks().length, btn=g('mvParkedBadge'), cnt=g('mvParkedStaleCount');
-  if (btn && cnt) { cnt.textContent=n; btn.classList.toggle('hidden',n===0); btn.style.display=n===0?'none':''; }
-}
-
-function openParkedReview() {
-  renderModalList('parkedList', 'parkedEmpty', getParkedStaleTasks(), t => {
-    const days=Math.floor((Date.now()-lastTouchedTs(t))/DAY_MS);
-    const row=document.createElement('div'); row.className='pr-task-row';
-    row.innerHTML = `
-      <div class="pr-tier-dot" style="background:${TIER_HEX[t.tier.key]||'var(--muted)'}"></div>
-      <div class="pr-body">
-        <div class="pr-name">${esc(t.name)}</div>
-        <div class="pr-meta">Score ${t.sc} · ${tierUI(t.tier.key).label.replace(/[^\x20-\x7E]/g,'').trim()}</div>
-        <div class="pr-age">${days>=60?`${Math.floor(days/30)} months parked`:`${days} days parked`}</div>
-      </div>
-      <div class="pr-btns">
-        <button class="pr-btn"     data-action="parked-reassess" data-id="${t.id}">Reassess</button>
-        <button class="pr-btn del" data-action="parked-delete"   data-id="${t.id}">Delete</button>
-      </div>`;
-    return row;
-  });
-  openModal('parkedOverlay');
-}
-
-function closeParkedReview() { closeModal('parkedOverlay'); }
-function maybeCloseParked(e) { if (e.target === g('parkedOverlay')) closeParkedReview(); }
-function parkedReassess(id)  { closeParkedReview(); openPanel(id); }
-function parkedDelete(id) {
-  commitTask(() => { tasks = tasks.filter(t => t.id !== id); });
-  render();
-  if (!g('parkedOverlay').classList.contains('hidden')) openParkedReview();
-}
-
-// ─── BOARD BADGES ────────────────────────────────────────────────────────────
-
-function setBadge(id, count, label) {
-  const el = g(id); if (!el) return;
-  el.textContent = label; el.classList.toggle('hidden', count === 0);
-}
-
-function updateBoardBadges() {
-  const active = tasks.filter(t => !t.done), now = Date.now();
-  const fire   = active.filter(t => t.tier?.key === 'fire').length;
-  const stuck  = active.filter(t => zoneFor(t)==='deep' && t.s<=2 && t.bricks.length===0 && now-lastTouchedTs(t)>7*DAY_MS).length;
-  setBadge('bzFireBadge',       fire,  BADGE_FIRE(fire));
-  setBadge('bzActivationBadge', stuck, BADGE_STUCK(stuck));
-  // Update header button count
-  const countEl = g('boardCount'); if (countEl) countEl.textContent = active.length;
-  // Update board panel subtitle
-  const subEl = g('boardPanelSub');
-  if (subEl) {
-    const zones = buildZones(tasks);
-    const fl = zones.flow.filter(t=>!t.done).length;
-    const dp = zones.deep.filter(t=>!t.done).length;
-    const dr = zones.drift.filter(t=>!t.done).length;
-    subEl.textContent = `${active.length} active · Flow ${fl} · Deep ${dp} · Drift ${dr}`;
-  }
-}
-
-// ─── HALO PANEL ──────────────────────────────────────────────────────────────
-
-// Returns { state:'warn'|'affirm'|'suppress', days:string }
-function getStreakState() {
-  const deepTasks = tasks.filter(t => zoneFor(t) === 'deep');
-  // Last Deep brick across all Deep tasks (session progress signal)
-  const allDeepBrickTs = deepTasks.flatMap(t => (t.bricks || []).map(b => b.ts));
-  // Last completed Deep task
-  const deepDoneTs = tasks.filter(t => t.done && zoneFor(t) === 'deep' && t.doneAt).map(t => t.doneAt);
-  const allTs = [...allDeepBrickTs, ...deepDoneTs];
-  if (!allTs.length) return { state:'warn', days:'a while' };
-  const lastTs = Math.max(...allTs);
-  const msAgo = Date.now() - lastTs;
-  const daysAgo = Math.floor(msAgo / DAY_MS);
-  if (msAgo < DAY_MS)        return { state:'suppress' };
-  if (msAgo < 3 * DAY_MS)   return { state:'affirm', days: daysAgo <= 1 ? 'yesterday' : `${daysAgo} days` };
-  return { state:'warn', days: `${daysAgo} days` };
-}
-
-// Returns the best Deep task to surface, cycling infinitely
-function pickDeepTask() {
-  const pool = tasks.filter(t => !t.done && zoneFor(t) === 'deep');
-  if (!pool.length) return null;
-  const available = pool.filter(t => !haloDeepSkipped.includes(t.id));
-  // All tasks seen — reset and start again (infinite cycle)
-  if (!available.length) haloDeepSkipped = [];
-  const candidates = pool.filter(t => !haloDeepSkipped.includes(t.id));
-  // Avoidance-first: untouched 7+ days, no bricks, then score desc
-  const untouched = candidates.filter(t => t.bricks.length === 0 && Date.now() - lastTouchedTs(t) > 7 * DAY_MS);
-  if (untouched.length) return untouched.sort((a,b) => b.sc - a.sc)[0];
-  return candidates.sort((a,b) => b.sc - a.sc)[0];
-}
-
-// Returns 3 flow slots: [highScore+avoidance, highScore, wildcard]
-function pickFlowSlots() {
-  const pool = tasks.filter(t => !t.done && zoneFor(t) === 'flow');
-  if (!pool.length) return [];
-  const byScore = [...pool].sort((a,b) => b.sc - a.sc);
-  // Slot 1: highest score + untouched 7+ days — Fire tasks always compete on score only
-  const avoided = byScore.filter(t => t.tier.key !== 'fire' && Date.now() - lastTouchedTs(t) > 7 * DAY_MS);
-  const slot1 = avoided.length ? avoided[0] : byScore[0];
-  // Slot 2: highest score, not slot1
-  const slot2 = byScore.find(t => t.id !== slot1.id) || null;
-  // Slot 3: remaining Fire tasks first, then most untouched (wildcard)
-  const picked = new Set([slot1.id, slot2?.id].filter(Boolean));
-  const wildPool = pool.filter(t => !picked.has(t.id));
-  const remainingFire = wildPool.filter(t => t.tier.key === 'fire').sort((a,b) => b.sc - a.sc);
-  const wildcard = remainingFire.length
-    ? remainingFire[0]
-    : wildPool.sort((a,b) => lastTouchedTs(a) - lastTouchedTs(b))[0] || null;
-  return [slot1, slot2, wildcard].filter(Boolean);
-}
-
-function renderHaloPanel() {
-  // Reset picker state on re-render
-  haloPickerTaskId = null;
-  const vDeep = g('haloViewDeep'); const vPick = g('haloViewPicker');
-  if (vDeep) vDeep.classList.remove('halo-view-hidden');
-  if (vPick) vPick.classList.add('halo-view-hidden');
-  // ── streak banner — hide when timer running ──
-  const streak = getStreakState();
-  const streakEl = g('haloStreak'), dotEl = g('haloStreakDot'), textEl = g('haloStreakText');
-  if (streak.state === 'suppress' || timerTaskId) {
-    streakEl.classList.add('hidden');
-  } else {
-    streakEl.classList.remove('hidden');
-    if (streak.state === 'warn') {
-      streakEl.className = 'halo-streak halo-streak-warn';
-      dotEl.className    = 'halo-streak-dot halo-streak-dot-warn';
-      textEl.textContent = HALO_STREAK_WARN(streak.days);
-    } else {
-      streakEl.className = 'halo-streak halo-streak-affirm';
-      dotEl.className    = 'halo-streak-dot halo-streak-dot-affirm';
-      textEl.textContent = HALO_STREAK_AFFIRM(streak.days);
-    }
-  }
-
-  // ── deep halo card ──
-  const task = pickDeepTask();
-  haloDeepCurrent = task;
-  const card = g('haloCard');
-
-  if (!task) {
-    card.innerHTML = `<div class="halo-empty">${HALO_EMPTY_DEEP}</div>`;
-  } else {
-    const untouchedDays = Math.floor((Date.now() - lastTouchedTs(task)) / DAY_MS);
-    let pillHtml = `<span class="halo-pill halo-pill-tier" style="background:${TIER_HEX[task.tier.key]||'#888'};color:#fff">${tierUI(task.tier.key).label}</span>`;
-    if (streak.state === 'suppress') {
-      pillHtml += `<span class="halo-pill halo-pill-today">${HALO_PILL_DONE_TODAY}</span>`;
-    } else if (streak.state === 'affirm' && task.bricks.length > 0) {
-      pillHtml += `<span class="halo-pill halo-pill-progress">${HALO_PILL_IN_PROGRESS}</span>`;
-    } else if (untouchedDays >= 1) {
-      pillHtml += `<span class="halo-pill halo-pill-age">${HALO_PILL_UNTOUCHED(untouchedDays)}</span>`;
-    }
-    const r = 15, circ = 2 * Math.PI * r, dash = (task.sc / 100) * circ;
-    card.innerHTML = `
-      <div class="halo-card" id="haloCardInner">
-        <div class="halo-card-top">
-          <div class="halo-card-eyebrow">${HALO_EYEBROW}</div>
-          <div class="halo-card-orb">
-            <svg viewBox="0 0 38 38" width="38" height="38">
-              <circle cx="19" cy="19" r="${r}" fill="none" stroke="var(--border2)" stroke-width="2.5"/>
-              <circle cx="19" cy="19" r="${r}" fill="none" stroke="var(--accent)" stroke-width="2.5"
-                stroke-dasharray="${dash.toFixed(1)} ${circ.toFixed(1)}" stroke-linecap="round"
-                transform="rotate(-90 19 19)"/>
-            </svg>
-            <div class="halo-orb-num">${task.sc}</div>
-          </div>
-          <div class="halo-card-name"><button class="halo-card-name-btn" data-action="halo-open" data-id="${task.id}">${esc(task.name)}</button></div>
-          <div class="halo-card-pills">${pillHtml}${task.bricks.length > 0 ? `<span class="halo-brick-badge">🧱 ${task.bricks.length}</span>` : ''}</div>
-        </div>
-        ${timerTaskId === task.id ? `<div class="halo-timer-running"><span class="halo-timer-dot"></span><span class="halo-timer-label" id="haloTimerLabel">–:–</span><button class="halo-timer-stop" data-action="timer-stop">Stop</button></div>` : `<button class="halo-btn-start" data-action="halo-start" data-id="${task.id}">${HALO_START_BTN}</button>`}
-        <div class="halo-secondary-row">
-          <button class="halo-btn-another" id="btnHaloAnother">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
-              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
-            </svg>
-            ${HALO_TRY_ANOTHER}
-          </button>
-        </div>
-      </div>`;
-    g('btnHaloAnother').addEventListener('click', () => {
-      if (haloDeepCurrent) haloDeepSkipped.push(haloDeepCurrent.id);
-      renderHaloPanel();
-    });
-  }
-
-  // ── peek drawer (flow slots) ──
-  renderPeekDrawer();
-}
-
-function renderPeekDrawer() {
-  const slots = pickFlowSlots();
-  const triggerText = g('peekTriggerText');
-  const peekCountEl = g('peekCount');
-  const inner = g('peekDrawerInner');
-
-  if (!slots.length) {
-    g('peekTrigger').style.display = 'none';
-    g('peekDrawer').style.display  = 'none';
-    return;
-  }
-
-  // Don't restore peek visibility if timer is running — timerSyncAll owns that
-  if (!timerTaskId) {
-    g('peekTrigger').style.display = '';
-    g('peekDrawer').style.display  = '';
-  }
-  triggerText.textContent = `${slots.length} Flow task${slots.length !== 1 ? 's' : ''} ready`;
-  peekCountEl.textContent = `+${slots.length}`;
-
-  inner.innerHTML = slots.map((task, idx) => {
-    const isWildcard = idx === 2;
-    const untouchedDays = Math.floor((Date.now() - lastTouchedTs(task)) / DAY_MS);
-    const scCls = isWildcard ? 'peek-sc peek-sc-wild' : 'peek-sc';
-    let meta = '';
-    if (isWildcard) meta += `<span class="peek-wild-tag">${HALO_WILDCARD_EYEBROW}</span><span>·</span>`;
-    meta += `<span>${tierUI(task.tier.key).label}</span>`;
-    if (untouchedDays >= 1) meta += `<span>·</span><span>${HALO_PILL_UNTOUCHED(untouchedDays)}</span>`;
-    return `
-      <div class="peek-row" data-action="halo-open" data-id="${task.id}">
-        <div class="${scCls}">${task.sc}</div>
-        <div class="peek-row-body">
-          <div class="peek-row-name">${esc(task.name)}</div>
-          <div class="peek-row-meta">${meta}${task.bricks.length > 0 ? `<span>·</span><span class="peek-brick-badge">🧱 ${task.bricks.length}</span>` : ''}</div>
-        </div>
-        ${timerTaskId === task.id ? `<span class="peek-row-running"><span class="halo-timer-dot"></span> running</span>` : `<button class="peek-row-start" data-action="halo-open" data-id="${task.id}">${HALO_FLOW_START_BTN}</button>`}
-      </div>`;
-  }).join('');
-}
-
-// ─── BOARD PANEL ─────────────────────────────────────────────────────────────
-
-function openBoardPanel(focusCapture) {
-  boardPanelOpen = true;
-  g('boardPanel').classList.add('open');
-  g('actPage').classList.add('board-open');
-  g('btnBoard').classList.add('active');
-  if (focusCapture) setTimeout(() => g('quickInput').focus(), 60);
-}
-
-function closeBoardPanel() {
-  boardPanelOpen = false;
-  g('boardPanel').classList.remove('open');
-  g('actPage').classList.remove('board-open');
-  g('btnBoard').classList.remove('active');
-}
-
-function toggleBoardPanel() {
-  if (boardPanelOpen) closeBoardPanel(); else openBoardPanel(false);
-}
-
-// ─── DRIFT DRAWER ─────────────────────────────────────────────────────────────
-
-let driftDrawerOpen = false;
-
-function toggleDriftDrawer() {
-  driftDrawerOpen ? closeDriftDrawer() : openDriftDrawer();
-}
-
-function openDriftDrawer() {
-  driftDrawerOpen = true;
-  g('mvDriftDrawer').classList.add('open');
-  g('btnDriftShow').textContent = '↓ hide';
-}
-
-function closeDriftDrawer() {
-  driftDrawerOpen = false;
-  g('mvDriftDrawer').classList.remove('open');
-  g('btnDriftShow').textContent = '↑ show';
-}
-// ─── PEEK DRAWER ─────────────────────────────────────────────────────────────
-
-function togglePeek() {
-  peekOpen = !peekOpen;
-  g('peekDrawer').classList.toggle('open', peekOpen);
-  g('peekChevron').classList.toggle('open', peekOpen);
-}
-
 // ─── RENDER ──────────────────────────────────────────────────────────────────
 
 function render() {
-  updateBoardBadges(); updateDriftBoxBadge(); updateParkedBadge(); renderMoodView();
+  updateDriftBoxBadge();
+  renderMain();
   if (activeId && byId(activeId)) renderPanelContent(activeId);
 }
 
-// ─── MOOD VIEW ───────────────────────────────────────────────────────────────
+// ─── MAIN SCREEN (v26 Contexts) ──────────────────────────────────────────────
+// One ranked list that re-ranks by focus mode (spec §4–§5.1).
 
-function renderMoodView() {
-  const zones = buildZones(tasks);
-  Object.values(zones).forEach(arr => arr.sort((a,b) => a.done !== b.done ? (a.done?1:-1) : b.sc-a.sc));
-  const split = arr => ({ active:arr.filter(t=>!t.done), done:arr.filter(t=>t.done) });
-  const fl=split(zones.flow), dp=split(zones.deep), dr=split(zones.drift);
+const FOLD_ROWS = 16;                    // rows shown after #3 before "Show more" (desktop)
+const MODE_ORDER = ['quick', 'zone', 'focus'];   // Simplicity · Urgency · Importance
+const MODE_AXIS  = { quick:'s', zone:'u', focus:'i' };
+const MODE_ICONS = {
+  quick: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg>',
+  zone:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1.5"/><path d="M2 15c2.5-3 5-3 7.5 0s5 3 7.5 0 3.5-2 5-1.5"/></svg>',
+  focus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg>',
+};
 
-  // Flow
-  g('mvFlowCount').textContent = fl.active.length + ' tasks';
-  const flowList = g('mvFlowList');
-  flowList.innerHTML = fl.active.length
-    ? fl.active.map(mvFlowCardHtml).join('')
-    : `<div class="mv-empty">${EMPTY_FLOW}</div>`;
-  flowList.querySelectorAll('.mv-flow-card').forEach((c,i) => c.style.animationDelay = (i*.04)+'s');
-  setDoneBadge('mvFlowDone', fl.done.length);
+function setMode(mode) {
+  // Tapping the active mode again returns to Balanced (§4.3)
+  currentMode = (mode === currentMode || !MODES.includes(mode)) ? 'balanced' : mode;
+  foldOpen = false; heroPickerId = null;
+  document.body.dataset.mode = currentMode;
+  renderMain();
+}
 
-  // Deep treemap
-  g('mvDeepCount').textContent = dp.active.length + ' tasks';
-  const treemap = g('mvDeepTreemap');
-  if (!dp.active.length) {
-    treemap.innerHTML = `<div class="mv-empty">${EMPTY_DEEP}</div>`;
-  } else {
-    // Top 6 → proportional treemap (fixed height, always visible)
-    // Remainder → compact pastel list that scrolls below
-    const TREEMAP_CAP = 10;
-    const treemapTasks = dp.active.slice(0, TREEMAP_CAP);
-    const listTasks    = dp.active.slice(TREEMAP_CAP);
-    const total = treemapTasks.reduce((s,t) => s+scoreWeight(t), 0) || 1;
-    let html = '<div class="mv-tm-rows">';
-    let i = 0;
-    while (i < treemapTasks.length) {
-      const t1=treemapTasks[i], t2=treemapTasks[i+1], w1=scoreWeight(t1);
-      if (!t2 || w1 > total*0.45) {
-        html += `<div class="mv-tm-row" style="flex:${Math.max(w1/total*treemapTasks.length,.7).toFixed(2)}">${mvDeepCellHtml(t1,1)}</div>`; i++;
-      } else {
-        const w2=scoreWeight(t2);
-        html += `<div class="mv-tm-row" style="flex:${Math.max((w1+w2)/total*treemapTasks.length,.7).toFixed(2)}">${mvDeepCellHtml(t1,(w1/(w1+w2)*2).toFixed(2))}${mvDeepCellHtml(t2,(w2/(w1+w2)*2).toFixed(2))}</div>`; i+=2;
-      }
-    }
-    html += '</div>';
-    if (listTasks.length) {
-      html += `<div class="mv-tm-list">${listTasks.map(mvDeepListCardHtml).join('')}</div>`;
-    }
-    treemap.innerHTML = html;
-    treemap.querySelectorAll('.mv-tm-cell').forEach((c,i) => c.style.animationDelay=(i*.06)+'s');
-    requestAnimationFrame(() => treemap.querySelectorAll('.mv-tm-cell').forEach(cell => {
-      const h=cell.offsetHeight;
-      cell.classList.remove('mv-sz-compact','mv-sz-minimal','mv-sz-tiny');
-      if (h<50) cell.classList.add('mv-sz-tiny'); else if (h<72) cell.classList.add('mv-sz-minimal');
-      // mv-sz-compact intentionally removed — at 72px+ full content always fits
-    }));
+// Tasks that belong in the list: not done, not rated Someday (§4.2)
+function listTasks() { return tasks.filter(t => !t.done && !isDrifted(t)); }
+
+// ── Small building blocks ──
+
+function slipLevel(t) {
+  const r = slipRatio(t);
+  return r === null || r <= 1 ? '' : r >= 2 ? 'red' : 'amber';
+}
+
+function slipBadgeHtml(t) {
+  const lvl = slipLevel(t); if (!lvl) return '';
+  return `<button class="slip-badge slip-${lvl}" data-action="open-drift-box" title="${esc(SLIP_BADGE_TITLE)}">${esc(urgencyAgeLabel(t))}</button>`;
+}
+
+function deepBadgeHtml(t)   { return isDeep(t) ? `<span class="deep-badge">${DEEP_BADGE}</span>` : ''; }
+function runningDotHtml(t)  { return timerTaskId === t.id ? '<span class="card-timer-dot" title="Block running"></span>' : ''; }
+
+function barsHtml(v, extraCls) {
+  return `<span class="mbars${extraCls ? ' ' + extraCls : ''}" aria-hidden="true">${[1,2,3,4].map(n => `<i${n <= v ? ' class="on"' : ''}></i>`).join('')}</span>`;
+}
+
+function ringHtml(sc, size, stroke) {
+  const r = (size - stroke) / 2, c = 2 * Math.PI * r, dash = Math.max(0, Math.min(100, sc)) / 100 * c;
+  return `<span class="ring" style="width:${size}px;height:${size}px">
+    <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true">
+      <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--ring-track)" stroke-width="${stroke}"/>
+      <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--accent)" stroke-width="${stroke}"
+        stroke-dasharray="${dash.toFixed(1)} ${c.toFixed(1)}" stroke-linecap="round" transform="rotate(-90 ${size/2} ${size/2})"/>
+    </svg>
+    <span class="ring-num">${sc}</span>
+  </span>`;
+}
+
+// S/U/I pills — order everywhere: Simplicity · Urgency · Importance (§4.3)
+function axisPillsHtml(t, compact) {
+  const lvl = slipLevel(t), active = MODE_AXIS[currentMode];
+  const axes = [
+    ['s', AXIS_SHORT.s, SIM_WORDS[t.s], t.s, ''],
+    ['u', AXIS_SHORT.u, URG_WORDS[t.u], t.u, lvl ? 'slip-' + lvl : ''],
+    ['i', AXIS_SHORT.i, IMP_WORDS[t.i], t.i, ''],
+  ];
+  return `<div class="axis-pills${compact ? ' compact' : ''}">${axes.map(([k, short, word, v, cls]) =>
+    `<span class="axis-pill${active === k ? ' is-active' : ''}" title="${AXIS_NAME[k]}: ${word}">
+      <span class="axis-k">${short}</span>${compact ? '' : `<span class="axis-word">${word}</span>`}${barsHtml(v, cls)}
+    </span>`).join('')}</div>`;
+}
+
+// ── Sections ──
+
+function renderHeaderMeta(nActive) {
+  const d = g('hdrDate');
+  if (d) d.textContent = new Date().toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short' });
+  const a = g('hdrActive'); if (a) a.textContent = HDR_ACTIVE(nActive);
+}
+
+function renderContext() {
+  const status = g('ctxStatus'), cards = g('modeCards');
+  if (status) {
+    status.innerHTML = currentMode === 'balanced'
+      ? `<strong>${BALANCED_TITLE}</strong> · ${BALANCED_LINE}`
+      : `<strong>${MODE_UI[currentMode].name}</strong> · ${MODE_UI[currentMode].nudge}
+         <button class="btn-back-balanced" data-action="back-balanced">${BACK_BALANCED}</button>`;
   }
-  setDoneBadge('mvDeepDone', dp.done.length);
-
-  // Drift
-  g('mvDriftCount').textContent = dr.active.length + ' parked';
-  const di = g('mvDriftInner');
-  di.innerHTML = dr.active.length ? dr.active.map(mvDriftChipHtml).join('')
-    : `<div class="mv-empty-drift">${EMPTY_DRIFT}</div>`;
-  di.querySelectorAll('.mv-drift-chip').forEach((c,i) => c.style.animationDelay=(i*.03)+'s');
-  setDoneBadge('mvDriftDone', dr.done.length);
-}
-
-function setDoneBadge(id, count) {
-  const el=g(id); if (!el) return;
-  el.style.display=count?'inline':'none'; el.textContent=`✓ ${count} done`;
-}
-
-// ─── CARD HTML ───────────────────────────────────────────────────────────────
-
-function agenceBadgeHtml(t) {
-  if (t.agency === 'shared')  return ' <span class="card-badge badge-shared">🤝 shared</span>';
-  if (t.agency === 'waiting') {
-    const days = Math.floor((Date.now()-lastTouchedTs(t))/DAY_MS);
-    return ` <span class="card-badge badge-waiting">⏸ waiting${days>=1?` · ${days}d`:''}</span>`;
+  if (cards) {
+    cards.innerHTML = MODE_ORDER.map(m => {
+      const ui = MODE_UI[m], on = currentMode === m;
+      return `<button class="mode-card mode-${m}${on ? ' is-on' : ''}" data-action="set-mode" data-mode="${m}" aria-pressed="${on}">
+        <span class="mode-icon">${MODE_ICONS[m]}</span>
+        <span class="mode-text"><span class="mode-name">${ui.name}</span><span class="mode-state">${ui.state}</span></span>
+        <span class="energy" aria-label="${ui.energy} of 3 energy">${[1,2,3].map(n => `<i${n <= ui.energy ? ' class="on"' : ''}></i>`).join('')}</span>
+      </button>`;
+    }).join('');
   }
-  return '';
 }
 
-function driftHtml(t, forceDeep) {
-  const frac=urgencyAgeFrac(t); if (frac===null||frac<=1) return {bar:'',label:''};
-  const pct=Math.min((frac-1)/2*100,100), inDeep=forceDeep||zoneFor(t)==='deep', sev=frac>2;
-  const barCls  = inDeep?'drift-deep'     :(sev?'drift-red'     :'drift-amber');
-  const textCls = inDeep?'drift-deep-text':(sev?'drift-red-text':'drift-amber-text');
-  const lbl=urgencyAgeLabel(t);
-  return { bar:`<div class="drift-bar ${barCls}" style="width:${pct.toFixed(1)}%"></div>`, label:lbl?`<div class="cd ${textCls}">${lbl}</div>`:'' };
-}
-
-function cardInnerHtml(t, bc, badge, drift, style) {
-  return `<div class="ci"${style?` style="${style}"`:''}>`
-    + `<div class="cs" style="color:${tierUI(t.tier.key).color}">${t.sc} · ${tierUI(t.tier.key).label}</div>`
-    + `<div class="cn${t.done?' strike':''}">${esc(t.name)}${badge}${t.note?'<span class="note-dot" title="Has note"></span>':''}</div>`
-    + `<div class="ck">${tierUI(t.tier.key).nudge}</div>`
-    + (bc>0?`<div class="cb">🧱 ${bc} brick${bc>1?'s':''}</div>`:'')
-    + drift.label;
-}
-
-function cardHtml(t) {
-  const bc=t.bricks.length, badge=agenceBadgeHtml(t), drift=driftHtml(t,false);
-  const un=(Date.now()-lastTouchedTs(t))/DAY_MS;
-  const isAv=!t.done&&bc===0&&t.s<=2&&un>7, isFB=!t.done&&bc===0&&!isAv&&un>7;
-  const linkBadge = cardLinkBadgeHtml(t);
-  const isPending = !t.done && (t.links||[]).some(l => l.type==='after' && byId(l.targetId) && !byId(l.targetId).done);
-  return `
-  <div class="task-card ${sizeClass(t.sc)} tier-${t.tier.key}${t.done?' done-card':''}${t.agency==='waiting'?' card-waiting':''}${isAv?' card-avoidance':isFB?' card-first-brick-gap':''}${isPending?' card-blocked':''}"
-       draggable="true" data-id="${t.id}" data-action="open-panel">
-    <div class="drag-handle" title="Drag to move">⠿</div>
-    <button class="card-check${t.done?' is-done':''}" data-action="toggle-done" data-id="${t.id}" title="${t.done?'Reopen':'Mark done'}"></button>
-    ${cardInnerHtml(t,bc,badge+linkBadge,drift,'padding-right:36px;padding-left:16px')}
-    ${isAv?`<div class="card-never-started">Never started · ${Math.floor(un)}d in ${zoneFor(t)==='deep'?'Deep':'Flow'}</div>`:''}
-    </div>${drift.bar}
+// "Can't wait": Fire tasks that the current ranking pushed out of the top 3 (§4.4)
+function renderFireBanner(ranked) {
+  const el = g('fireBanner'); if (!el) return;
+  const top3 = new Set(ranked.slice(0, 3).map(t => t.id));
+  const out = ranked.filter(t => t.tier?.key === 'fire' && !top3.has(t.id)).sort((a, b) => b.sc - a.sc);
+  if (!out.length) { el.innerHTML = ''; return; }
+  const t = out[0];
+  el.innerHTML = `<div class="fire-banner" data-action="open-panel" data-id="${t.id}" data-task-id="${t.id}" role="button" tabindex="0">
+    <span class="fire-label">🔥 ${FIRE_BANNER}</span>
+    <span class="fire-name">${esc(t.name)}</span>${runningDotHtml(t)}
+    ${out.length > 1 ? `<span class="fire-more">(+${out.length - 1})</span>` : ''}
+    <span class="fire-score">${t.sc}</span>
   </div>`;
 }
 
-function cardLinkBadgeHtml(t) {
-  const links = t.links || [];
-  // "required" — this task is a prerequisite for at least one undone task
-  const isRequired = links.some(l => l.type === 'before' && byId(l.targetId) && !byId(l.targetId).done);
-  // "pending" — this task has an undone prerequisite
-  const isPending  = links.some(l => l.type === 'after'  && byId(l.targetId) && !byId(l.targetId).done);
-  if (isRequired) return ' <span class="card-badge badge-required">required</span>';
-  if (isPending)  return ' <span class="card-badge badge-pending">pending</span>';
-  return '';
-}
-
-// Compact single-line card for Flow (and Deep list fallback)
-// Badge logic: bricks takes priority over link dependency — one badge max
-function mvCardBadgeHtml(t) {
-  const bc = t.bricks ? t.bricks.length : 0;
-  if (bc > 0) return `<span class="mv-fc-badge badge-bricks">🧱 ${bc}</span>`;
-  const links = t.links || [];
-  const isRequired = links.some(l => l.type === 'before' && byId(l.targetId) && !byId(l.targetId).done);
-  const isPending  = links.some(l => l.type === 'after'  && byId(l.targetId) && !byId(l.targetId).done);
-  if (isRequired) return `<span class="mv-fc-badge badge-required">→</span>`;
-  if (isPending)  return `<span class="mv-fc-badge badge-pending">⏸</span>`;
-  return '';
-}
-
-function mvFlowCardHtml(t, zone) {
-  zone = zone || 'flow';
-  const hex = TIER_HEX[t.tier.key] || 'var(--muted)';
-  const badge = mvCardBadgeHtml(t);
-  return `<div class="mv-flow-card" draggable="true" data-zone="${zone}" data-id="${t.id}" data-action="open-panel"
-    style="animation-delay:0s">
-    <div class="mv-fc" style="border-left-color:${hex}">
-      <span class="mv-fc-name${t.done?' strike':''}">${esc(t.name)}</span>
-      ${badge}
-      ${timerTaskId === t.id ? '<span class="card-timer-dot" title="Block running"></span>' : ''}
-      <span class="mv-fc-score">${t.sc}</span>
+function heroHtml(t) {
+  const ui = currentMode === 'balanced' ? null : MODE_UI[currentMode];
+  const kicker = ui ? ui.kicker : BALANCED_KICKER;
+  const picking = heroPickerId === t.id;
+  const action = picking
+    ? `<div class="hero-picker" role="group" aria-label="${PICKER_LABEL}">
+        <span class="hero-picker-label">${PICKER_LABEL}</span>
+        ${[15, 25, 50].map(m => `<button class="hero-dur${m === timerSelectedMins ? ' is-last' : ''}" data-action="hero-pick-dur" data-mins="${m}">${m} min</button>`).join('')}
+        <button class="hero-dur-cancel" data-action="hero-pick-cancel">${PICKER_CANCEL}</button>
+      </div>`
+    : `<button class="btn-onit" data-action="hero-start" data-id="${t.id}">${HERO_CTA}</button>`;
+  return `<article class="hero-card${isDeep(t) ? ' is-deep' : ''}" data-action="open-panel" data-id="${t.id}" data-task-id="${t.id}" role="button" tabindex="0">
+    ${ringHtml(t.sc, 104, 7)}
+    <div class="hero-body">
+      <div class="hero-kicker"><span>${kicker}</span>${deepBadgeHtml(t)}</div>
+      <h2 class="hero-title">${esc(t.name)}${runningDotHtml(t)}</h2>
+      <div class="hero-meta">${slipBadgeHtml(t)}<span class="hero-nudge">${tierUI(t.tier.key).nudge}</span></div>
+      ${axisPillsHtml(t, false)}
+      <div class="hero-actions">${action}</div>
     </div>
+  </article>`;
+}
+
+function nextCardHtml(t, rank) {
+  return `<article class="next-card${isDeep(t) ? ' is-deep' : ''}" data-action="open-panel" data-id="${t.id}" data-task-id="${t.id}" role="button" tabindex="0">
+    ${ringHtml(t.sc, 48, 4)}
+    <div class="next-body">
+      <div class="next-top"><span class="next-rank">#${rank}</span>${deepBadgeHtml(t)}${slipBadgeHtml(t)}</div>
+      <div class="next-title">${esc(t.name)}${runningDotHtml(t)}</div>
+      ${axisPillsHtml(t, true)}
+    </div>
+    <button class="row-check" data-action="toggle-done" data-id="${t.id}" aria-label="${MARK_DONE} — ${esc(t.name)}" title="${MARK_DONE}"></button>
+  </article>`;
+}
+
+function listRowHtml(t, rank) {
+  const lvl = slipLevel(t);
+  return `<div class="list-row${isDeep(t) ? ' is-deep' : ''}" data-action="open-panel" data-id="${t.id}" data-task-id="${t.id}" role="button" tabindex="0">
+    <span class="c-rank">${rank}</span>
+    <span class="c-task"><span class="c-name">${esc(t.name)}</span>${runningDotHtml(t)}${deepBadgeHtml(t)}${slipBadgeHtml(t)}</span>
+    <span class="c-ax" title="${AXIS_NAME.s}: ${SIM_WORDS[t.s]}">${barsHtml(t.s)}</span>
+    <span class="c-ax" title="${AXIS_NAME.u}: ${URG_WORDS[t.u]}">${barsHtml(t.u, lvl ? 'slip-' + lvl : '')}</span>
+    <span class="c-ax" title="${AXIS_NAME.i}: ${IMP_WORDS[t.i]}">${barsHtml(t.i)}</span>
+    <span class="c-matter">${t.sc}</span>
+    <button class="row-check" data-action="toggle-done" data-id="${t.id}" aria-label="${MARK_DONE} — ${esc(t.name)}" title="${MARK_DONE}"></button>
   </div>`;
 }
 
-// Shared style computation for Deep treemap and list cards
-function deepCardStyle(t) {
-  const hex = TIER_HEX[t.tier.key] || '#6366F1';
-  const rgb = hexRgb(hex);
-  return { hex, softBg:`rgba(${rgb},.09)`, border:`rgba(${rgb},.22)` };
-}
-
-// Treemap cell for Deep — top border in tier color, pastel fill, name + score only
-function mvDeepCellHtml(t, flexW) {
-  const { hex, softBg, border } = deepCardStyle(t);
-  const bc = t.bricks ? t.bricks.length : 0;
-  return `
-  <div class="mv-tm-cell" style="flex:${flexW}" data-id="${t.id}" data-zone="deep" draggable="true" data-action="open-panel">
-    <div class="mv-tm-card${t.done?' done-card':''}"
-         style="background:${softBg};border:1px solid ${border};border-top-color:${hex}">
-      <div class="mv-tm-inner">
-        <div class="mv-tm-name">${esc(t.name)}${timerTaskId === t.id ? '<span class="card-timer-dot card-timer-dot--tm" title="Block running"></span>' : ''}</div>
-        <div class="mv-tm-foot">
-          ${bc > 0 ? `<span class="mv-tm-bricks">🧱 ${bc}</span>` : ''}
-          <div class="mv-tm-score">${t.sc}</div>
-        </div>
+function renderList(rest) {
+  const el = g('listSection'); if (!el) return;
+  if (!rest.length) { el.innerHTML = ''; return; }
+  const shown = foldOpen ? rest : rest.slice(0, FOLD_ROWS);
+  const hidden = rest.length - shown.length;
+  const active = MODE_AXIS[currentMode];
+  const col = (k, label) => `<span class="c-ax${active === k ? ' is-active' : ''}">${label}${active === k ? ' ▾' : ''}</span>`;
+  el.innerHTML = `
+    <div class="list-head-title">${LIST_TITLE}</div>
+    <div class="list-table${currentMode !== 'balanced' ? ' in-mode' : ''}">
+      <div class="list-row list-head" aria-hidden="true">
+        <span class="c-rank">#</span><span class="c-task">${COL_TASK}</span>
+        ${col('s', COL_SIMP)}${col('u', COL_URG)}${col('i', COL_IMP)}
+        <span class="c-matter${currentMode === 'balanced' ? ' is-active' : ''}">${COL_MATTER}${currentMode === 'balanced' ? ' ▾' : ''}</span><span></span>
       </div>
+      ${shown.map((t, i) => listRowHtml(t, i + 4)).join('')}
     </div>
-  </div>`;
+    ${rest.length > FOLD_ROWS ? `<button class="fold-btn" data-action="fold-toggle" aria-expanded="${foldOpen}">
+      ${foldOpen ? FOLD_LESS : `<strong>${FOLD_MORE(hidden)}</strong> · ${FOLD_MORE_SUB}`}</button>` : ''}`;
 }
 
-// Compact list card for Deep overflow — pastel bg + left tier border, matches treemap aesthetic
-function mvDeepListCardHtml(t) {
-  const { hex, softBg, border } = deepCardStyle(t);
-  const badge = mvCardBadgeHtml(t);
-  return `<div class="mv-flow-card" draggable="true" data-zone="deep" data-id="${t.id}" data-action="open-panel">
-    <div class="mv-fc" style="border-left-color:${hex};background:${softBg};border-color:${border};border-left-color:${hex}">
-      <span class="mv-fc-name${t.done?' strike':''}">${esc(t.name)}</span>
-      ${badge}
-      <span class="mv-fc-score">${t.sc}</span>
-    </div>
-  </div>`;
+function renderFoot() {
+  const el = g('ctxFoot'); if (!el) return;
+  const nDone = tasks.filter(t => t.done).length;
+  el.innerHTML = [
+    currentMode !== 'balanced' ? `<span>${BACK_NEXT_TIME}</span>` : '',
+    nDone ? `<button class="done-link" data-action="open-done">✓ ${DONE_LINK(nDone)}</button>` : '',
+  ].filter(Boolean).join('<span class="foot-sep">·</span>');
 }
-function mvDriftChipHtml(t) {
-  return `<div class="mv-drift-chip" draggable="true" data-id="${t.id}" data-zone="drift" data-action="open-panel">
-    ${esc(t.name)}${t.note?'<span class="note-dot"></span>':''}
-    <span class="mv-dc-score">${t.sc}</span>
-    <div class="mv-dchip-check" data-action="toggle-done" data-id="${t.id}" title="Mark done">✓</div>
-  </div>`;
+
+function renderMain() {
+  const pool = listTasks();
+  const ranked = sortByMode(pool, currentMode);
+  const running = timerTaskId !== null;
+  renderHeaderMeta(pool.length);
+  renderContext();
+  renderFireBanner(ranked);
+
+  const hero = g('heroSlot'), next = g('nextCards');
+  if (!ranked.length) {
+    const nDrifted = tasks.filter(t => !t.done && isDrifted(t)).length;
+    hero.innerHTML = `<div class="empty-state">${nDrifted
+      ? `${EMPTY_ALL_DRIFT(nDrifted)} <button class="empty-cta" data-action="open-drift-box">${EMPTY_REVIEW}</button>`
+      : `${EMPTY_NONE} <button class="empty-cta" data-action="open-capture">${EMPTY_ADD}</button>`}</div>`;
+    next.innerHTML = '';
+    renderList([]);
+  } else {
+    // While a block runs, the session card takes the #1 slot (§5.6)
+    hero.innerHTML = running ? '' : heroHtml(ranked[0]);
+    next.innerHTML = ranked.slice(1, 3).map((t, i) => nextCardHtml(t, i + 2)).join('');
+    renderList(ranked.slice(3));
+  }
+  renderFoot();
 }
 
 // ─── DELEGATED EVENT DISPATCHER ─────────────────────────────────────────────
@@ -2060,105 +1658,23 @@ document.addEventListener('click', e => {
     case 'select-search':    selectSearchResult(id);                        break;
     case 'open-trophy':      openTrophy(id);                                break;
     case 'reopen-from-done': e.stopPropagation(); reopenFromDone(id);       break;
-    case 'parked-reassess':  parkedReassess(id);                            break;
-    case 'parked-delete':    parkedDelete(id);                              break;
-    case 'halo-open':        openPanel(id);                                 break;
-    case 'halo-start':       haloShowPicker(id);                            break;
-    case 'halo-pick-dur':    haloPickDuration(parseInt(el.dataset.mins));   break;
-    case 'halo-pick-cancel': haloHidePicker();                              break;
+    case 'set-mode':         setMode(el.dataset.mode);                      break;
+    case 'back-balanced':    setMode('balanced');                           break;
+    case 'fold-toggle':      foldOpen = !foldOpen; renderMain();            break;
+    case 'hero-start':       e.stopPropagation(); heroShowPicker(id);       break;
+    case 'hero-pick-dur':    e.stopPropagation(); heroPickDuration(parseInt(el.dataset.mins)); break;
+    case 'hero-pick-cancel': e.stopPropagation(); heroHidePicker();         break;
+    case 'open-drift-box':   e.stopPropagation(); openDriftBox();           break;
+    case 'open-capture':     openCapture();                                 break;
+    case 'open-done':        openDoneModal();                               break;
     case 'timer-stop':       timerStop(false);                              break;
-    case 'scroll-to-board':    openBoardPanel(false);                       break;
     case 'drift-box-reassess': driftBoxReassess(id);                        break;
-    case 'fire-modal-open':    fireModalOpen(id);                            break;
-    case 'stuck-modal-brick':  stuckModalBrick(id);                         break;
     case 'open-link-search':   openLinkSearch(id);                          break;
     case 'ls-select':          selectLinkResult(+el.dataset.idx);           break;
     case 'remove-pending-link': pendingCreateLinks.splice(+el.dataset.idx, 1); renderPanelLinks(null); break;
     case 'unlink-tasks':       unlinkTasks(id, +el.dataset.targetid);       break;
   }
 });
-
-// ─── DRAG & DROP ─────────────────────────────────────────────────────────────
-
-document.addEventListener('dragstart', e => {
-  let row = e.target.closest('[data-id][data-zone]');
-  if (!row) { const card=e.target.closest('.task-card[data-id]'); if (card) { const w=card.closest('[data-zone]'); if (w) row=w; } }
-  if (!row) return;
-  if (e.target.closest('.card-check,.mv-dchip-check')) { e.preventDefault(); return; }
-  mvDragId = +row.dataset.id;
-  row.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain', mvDragId);
-});
-
-document.addEventListener('dragend', () => {
-  document.querySelectorAll('.dragging,.mv-drop-target,.mv-drop-reject')
-    .forEach(el => el.classList.remove('dragging','mv-drop-target','mv-drop-reject'));
-  mvDragId = null;
-});
-
-function clearDropHighlights() {
-  document.querySelectorAll('.mv-col,.mv-drift-footer').forEach(c => c.classList.remove('mv-drop-target','mv-drop-reject'));
-}
-
-document.addEventListener('dragover', e => {
-  if (!mvDragId) return;
-  const col=e.target.closest('.mv-col'), driftEl=e.target.closest('.mv-drift-footer,.mv-drift-drawer');
-  if (!col && !driftEl) return;
-  const zone=col?MV_ZONE_MAP[col.id]:'drift'; if (!zone) return;
-  e.preventDefault(); clearDropHighlights();
-  const t=byId(mvDragId); if (!t) return;
-  const res=resolveDrop(t,zone), target=col||g('mvDriftWrap');
-  target.classList.add(res?'mv-drop-target':'mv-drop-reject');
-  e.dataTransfer.dropEffect=res?'move':'none';
-});
-
-document.addEventListener('dragleave', e => {
-  const col=e.target.closest('.mv-col'), driftEl=e.target.closest('.mv-drift-footer,.mv-drift-drawer');
-  if (col    && !col.contains(e.relatedTarget))     col.classList.remove('mv-drop-target','mv-drop-reject');
-  if (driftEl && !driftEl.contains(e.relatedTarget)) g('mvDriftWrap').classList.remove('mv-drop-target','mv-drop-reject');
-});
-
-document.addEventListener('drop', e => {
-  if (!mvDragId) return;
-  clearDropHighlights();
-  const col=e.target.closest('.mv-col'), driftEl=e.target.closest('.mv-drift-footer,.mv-drift-drawer');
-  const zone=col?MV_ZONE_MAP[col.id]:driftEl?'drift':null; if (!zone) return;
-  e.preventDefault();
-  const t=byId(mvDragId); if (!t) return;
-  const res=resolveDrop(t,zone); if (!res) return;
-  mvPendingDrop = { taskId:mvDragId, zone, resolution:res };
-  if (zone !== 'drift') render();
-  mvRenderDropConfirm(zone, mvDragId, res); mvDragId=null;
-});
-
-function mvRenderDropConfirm(zone, taskId, res) {
-  const cid={flow:'mvFlowConfirm',deep:'mvDeepConfirm',drift:'mvDriftConfirm'}[zone];
-  const c=g(cid); if (!c) return;
-  const t=byId(taskId); if (!t) return;
-  c.innerHTML = `<div class="mv-confirm">
-    <div class="mv-confirm-task">${esc(t.name)}</div>
-    <div class="mv-confirm-nudge">${res.nudge}</div>
-    <div class="mv-confirm-change"><b>Δ</b> ${formatDelta(res.delta)}</div>
-    <div class="mv-confirm-actions">
-      <button class="btn-drag-apply"  id="btnDragApply">Apply & move</button>
-      <button class="btn-drag-cancel" id="btnDragCancel">Cancel</button>
-    </div>
-  </div>`;
-  const btnApply  = g('btnDragApply');  if (btnApply)  btnApply.addEventListener('click', mvApplyDrop);
-  const btnCancel = g('btnDragCancel'); if (btnCancel) btnCancel.addEventListener('click', mvCancelDrop);
-}
-
-function mvApplyDrop()  { if (!mvPendingDrop) return; applyDrop(mvPendingDrop.taskId, mvPendingDrop.resolution); mvPendingDrop=null; }
-function mvCancelDrop() { mvPendingDrop=null; clearConfirms(); }
-
-function applyDrop(taskId, res) {
-  const t=byId(taskId); if (!t) return;
-  commitTask(() => {
-    res.apply(t); t.sc = calcScore(t.i, t.u, t.s); t.tier = getTier(t.sc);
-    if (!t.edits) t.edits = []; t.edits.push(Date.now());
-  });
-  render(); clearConfirms();
-  if (activeId === taskId) renderPanelContent(taskId);
-}
 
 // ─── SEARCH ──────────────────────────────────────────────────────────────────
 
@@ -2210,9 +1726,10 @@ function _doSearch() {
     el.innerHTML=`<div class="search-empty">No tasks match "<strong>${q}</strong>"<br><span style="font-size:10px;margin-top:4px;display:block">Try a word from the task name, note, or a progress log</span></div>`;
     return;
   }
-  const ZL={flow:'Flow',deep:'Deep',drift:'Drift'};
+  const ZL={flow:'List',deep:'Deep',drift:'Drift box'};
+  const placeOf=t=>isDrifted(t)||(slipRatio(t)??0)>1?'drift':isDeep(t)?'deep':'flow';
   el.innerHTML=scored.map(({t,nm,no,cx,bk})=>{
-    const zone=zoneFor(t);
+    const zone=placeOf(t);
     let mc='';
     if (!nm&&no&&t.note)     { const i=t.note.toLowerCase().indexOf(q); mc=`Note: ${t.note.slice(Math.max(0,i-20),i+40).trim()}`; }
     else if (!nm&&cx&&t.context) mc=`Context: ${t.context}`;
@@ -2236,14 +1753,13 @@ document.addEventListener('keydown', e => {
   if (e.key==='Escape') {
     // Overlay-level Escape is handled by capture-phase listeners on each overlay.
     // This fallback covers non-overlay layers only.
-    if (driftDrawerOpen) { closeDriftDrawer(); return; }
-    if (boardPanelOpen)  { closeBoardPanel();  return; }
+    if (captureOpen) { closeCapture(); return; }
     quickInput.blur(); return;
   }
   if (inInput) return;
   if ((e.key==='n'||e.key==='N')&&!activeId&&!doneModalZone&&!trophyTaskId) {
     e.preventDefault();
-    openBoardPanel(true);
+    openCapture();
   }
   if (e.key==='/'&&!activeId&&!doneModalZone&&!trophyTaskId&&!searchActive) { e.preventDefault(); openSearch(); }
 });
@@ -2259,9 +1775,6 @@ onEscapeCapture('mergeModalOverlay', closeMergeModal);
 onEscapeCapture('linkSearchOverlay', closeLinkSearch);
 onEscapeCapture('searchOverlay',     closeSearch);
 onEscapeCapture('driftBoxOverlay',   closeDriftBox);
-onEscapeCapture('parkedOverlay',     closeParkedReview);
-onEscapeCapture('fireOverlay',       closeFireModal);
-onEscapeCapture('stuckOverlay',      closeStuckModal);
 onEscapeCapture('trophyOverlay',     closeTrophy);
 onEscapeCapture('doneModalOverlay',  closeDoneModal);
 onEscapeCapture('overlay',           closePanel);
@@ -2272,40 +1785,22 @@ g('btnExport').addEventListener('click', exportData);
 g('btnReset').addEventListener('click', () => { mmConfirm(RESET_CONFIRM, clearSave); });
 g('importInput').addEventListener('change', importData);
 
-// Board panel
-g('btnBoard').addEventListener('click', toggleBoardPanel);
-g('btnBoardClose').addEventListener('click', closeBoardPanel);
-
-// Peek drawer
-g('peekTrigger').addEventListener('click', togglePeek);
-
-// Inbox
-g('btnTriage').addEventListener('click', openTriage);
-
-// Board header badges
-g('bzFireBadge').addEventListener('click', openFireModal);
-g('bzActivationBadge').addEventListener('click', openStuckModal);
+// Header entries: Drift box · Inbox · + Add
 g('btnDriftBox').addEventListener('click', openDriftBox);
+g('btnInbox').addEventListener('click', openTriage);
+g('btnAdd').addEventListener('click', () => captureOpen ? closeCapture() : openCapture());
 
-// Done badges
-g('mvFlowDone').addEventListener('click', () => openDoneModal('flow'));
-g('mvDeepDone').addEventListener('click', () => openDoneModal('deep'));
+// List rows are role="button" divs: Enter / Space open them like a click
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const row = e.target.closest && e.target.closest('.ctx-main [role="button"][data-action]');
+  if (!row || e.target !== row) return;
+  e.preventDefault(); row.click();
+});
 
 // Drift box modal
 g('driftBoxOverlay').addEventListener('click', maybeCloseDriftBox);
 g('btnDriftBoxClose').addEventListener('click', closeDriftBox);
-
-// Fire modal
-g('fireOverlay').addEventListener('click', maybeCloseFire);
-g('btnFireClose').addEventListener('click', closeFireModal);
-
-// Stuck modal
-g('stuckOverlay').addEventListener('click', maybeCloseStuck);
-g('btnStuckClose').addEventListener('click', closeStuckModal);
-
-// Parked modal
-g('parkedOverlay').addEventListener('click', maybeCloseParked);
-g('btnParkedClose').addEventListener('click', closeParkedReview);
 
 // Create panel
 g('btnPanelCreate').addEventListener('click', addTaskFromPanel);
@@ -2384,8 +1879,6 @@ g('haloSessionCard').addEventListener('click', e => {
   if (!e.target.closest('button') && timerTaskId) openPanel(timerTaskId);
 });
 
-// Restore timer after page load
-timerRestore();
 g('btnApplyScore').addEventListener('click', applyScoreEdit);
 g('btnDriftKeep').addEventListener('click', keepUrgency);
 g('btnDriftAction').addEventListener('click', driftAction);
@@ -2426,9 +1919,25 @@ quickInput.addEventListener('focus', ()=>captureWrap.classList.add('focused'));
 quickInput.addEventListener('blur',  ()=>captureWrap.classList.remove('focused'));
 quickInput.addEventListener('keydown', e => {
   if (e.key!=='Enter') return; e.preventDefault();
-  if (e.shiftKey) { const n=quickInput.value.trim(); if(!n) return; quickInput.value=''; captureWrap.classList.remove('focused'); openPanelCreate(n); }
+  if (e.shiftKey) { const n=quickInput.value.trim(); if(!n) return; quickInput.value=''; captureWrap.classList.remove('focused'); closeCapture(); openPanelCreate(n); }
   else quickCapture();
 });
+
+// Compact capture row under the header (interim — becomes a popover in session ④)
+function openCapture() {
+  captureOpen = true;
+  g('captureRow').classList.remove('hidden');
+  g('btnAdd').setAttribute('aria-expanded', 'true');
+  updateHeaderOffset();
+  setTimeout(() => quickInput.focus(), 30);
+}
+function closeCapture() {
+  captureOpen = false;
+  quickInput.blur();
+  g('captureRow').classList.add('hidden');
+  g('btnAdd').setAttribute('aria-expanded', 'false');
+  updateHeaderOffset();
+}
 
 // ─── BOOT ────────────────────────────────────────────────────────────────────
 
@@ -2458,7 +1967,8 @@ if (!tasks.length) {
   save();
 }
 
+document.body.dataset.mode = currentMode;   // every launch starts in Balanced
 render();
 renderInbox();
-renderHaloPanel();
+timerRestore();
 

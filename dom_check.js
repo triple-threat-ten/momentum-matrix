@@ -69,18 +69,16 @@ const allReferencedIds = new Set([...gCalls, ...getByIdCalls, ...queriedIds]);
 // These are IDs constructed via string concatenation (e.g. 'pTab' + cap(key))
 // They exist in HTML but can't be statically verified — skip them.
 
-const DYNAMIC_PREFIXES = ['pTab', 'pCtx', 'mvFlow', 'mvDeep', 'mvDrift'];
+const DYNAMIC_PREFIXES = ['pTab', 'pCtx'];
 const KNOWN_FALSE_POSITIVES = new Set([
   // IDs that are injected dynamically into innerHTML, not static in HTML
   'brickCtaCard', 'brickLinkCta', 'brickInp', 'btnBrickSave', 'btnBrickCancel',
   'btnApplyScore', 'pBrickDetailDel', 'pBrickDetailText', 'pBrickDetailTs',
   'btnDriftKeep', 'btnDriftAction', 'pAvoidanceText',
-  // Halo card — injected dynamically when timer is running
-  'haloTimerLabel', 'btnHaloAnother',
-  // Drag-and-drop confirm bar — injected dynamically on drop
-  'btnDragApply', 'btnDragCancel',
   // IDs inside dynamically rendered modal content
   'ltcFromName', 'ltcToName', 'mergeKeepName', 'mergeAbsorbName',
+  // "Next step" input injected by renderPlanned() (v25.6)
+  'stepLinkCta', 'stepInputRow', 'stepInp', 'btnStepSave', 'btnStepCancel',
 ]);
 
 // ─── Run checks ──────────────────────────────────────────────────────────────
@@ -134,6 +132,17 @@ const REMOVED_IDS = [
   'triageContextInput', 'triageContextRow', 'btnTriSend', 'btnTriSkip', 'btnTriDel',
   'btnTriageClose', 'tOrbCircle', 'tOrbRing', 'tOrbNum', 'tOrbTier',
   'tImp', 'tUrg', 'tSim',
+  // v26 Contexts — Halo block, peek drawer, Board panel, treemap, Drift drawer, old modals
+  'haloPanel', 'haloStreak', 'haloStreakDot', 'haloStreakText', 'haloBlock', 'haloViewDeep',
+  'haloViewPicker', 'haloCard', 'haloPickerTask', 'haloTimerLabel', 'btnHaloAnother',
+  'peekTrigger', 'peekTriggerText', 'peekCount', 'peekChevron', 'peekDrawer', 'peekDrawerInner',
+  'actPage', 'boardPanel', 'boardPanelSub', 'btnBoard', 'btnBoardClose', 'boardCount',
+  'bzFireBadge', 'bzActivationBadge', 'inboxStrip', 'inboxCards', 'btnTriage',
+  'moodView', 'mvColFlow', 'mvColDeep', 'mvFlowList', 'mvDeepTreemap', 'mvFlowDone', 'mvDeepDone',
+  'mvDriftWrap', 'mvDriftDrawer', 'mvDriftInner', 'mvDriftDone', 'mvParkedBadge', 'btnDriftShow',
+  'mvFlowConfirm', 'mvDeepConfirm', 'mvDriftConfirm', 'btnDragApply', 'btnDragCancel',
+  'fireOverlay', 'fireModalList', 'btnFireClose', 'stuckOverlay', 'stuckModalList', 'btnStuckClose',
+  'parkedOverlay', 'parkedList', 'btnParkedClose',
 ];
 const zombies = REMOVED_IDS.filter(id => {
   const re = new RegExp(`g\\('${id}'\\)|getElementById\\('${id}'\\)`);
@@ -155,7 +164,7 @@ if (zombies.length) {
 console.log('\n── Check 4: Unreferenced IDs in HTML (advisory) ────────');
 const IGNORE_UNREFERENCED = new Set([
   // IDs used only by CSS, aria, or label[for]
-  'importInput', 'quickInput', 'captureWrap', 'actPage',
+  'importInput', 'quickInput', 'captureWrap', 'ctxMain', 'btnImport',
   // IDs referenced from inline event handlers in HTML
   'pNameInput', 'pNote',
 ]);
